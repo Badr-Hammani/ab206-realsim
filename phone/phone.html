@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#101418">
+<title>AB206 phone controller</title>
+<style>
+  :root { --bg:#101418; --panel:#1a2026; --text:#e8edf2; --dim:#8a96a3; --accent:#f2b53a; --ok:#5fd17a; --bad:#ff6b5b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  body { padding:16px; max-width:560px; margin:0 auto; user-select:none; -webkit-user-select:none; }
+  h1 { font-size:19px; margin:4px 0 2px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:12px; }
+  .roles { display:flex; gap:10px; margin:10px 0; }
+  .roles button { flex:1; }
+  button { font:inherit; font-weight:600; color:var(--text); background:var(--panel); border:2px solid #2c353e; border-radius:12px; padding:14px 10px; }
+  button.sel { border-color:var(--accent); color:var(--accent); }
+  button.big { width:100%; background:var(--accent); color:#1b1400; border-color:var(--accent); font-size:18px; padding:16px; margin:6px 0; }
+  button.wide { width:100%; margin:6px 0; }
+  .card { background:var(--panel); border-radius:12px; padding:12px 14px; margin:10px 0; }
+  .row { display:flex; justify-content:space-between; gap:8px; font-size:14px; }
+  .dim { color:var(--dim); }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--accent); }
+  canvas { width:100%; height:auto; display:block; background:#0b0e11; border-radius:12px; margin:8px 0; }
+  .help { font-size:14px; color:#c4ccd4; }
+  .help b { color:var(--text); }
+  #engage { font-size:17px; font-weight:700; text-align:center; padding:8px; border-radius:10px; margin:6px 0; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<h1>AB206 REALSIM phone controller</h1>
+<div class="sub">Tilt the phone to fly. Educational simulation only.</div>
+
+<div id="setup">
+  <div class="dim" style="font-size:14px">1. What will this phone be?</div>
+  <div class="roles">
+    <button id="r_cyclic" onclick="pickRole('cyclic')">Cyclic<br><span class="dim" style="font-weight:400;font-size:12px">right hand</span></button>
+    <button id="r_collective" onclick="pickRole('collective')">Collective<br><span class="dim" style="font-weight:400;font-size:12px">left hand</span></button>
+  </div>
+  <div class="card help" id="howto"></div>
+  <div class="dim" style="font-size:14px">2. Hold it in the neutral position, then:</div>
+  <button class="big" id="startBtn" onclick="start()">Start</button>
+  <div id="secwarn" class="card bad hidden"></div>
+</div>
+
+<div id="live" class="hidden">
+  <div id="engage">connecting...</div>
+  <canvas id="cv" width="520" height="300"></canvas>
+  <button class="wide" onclick="calibrate()">Set neutral here</button>
+  <div class="card">
+    <div class="row"><span class="dim">Link</span><span id="link">-</span></div>
+    <div class="row"><span class="dim">Sensor</span><span id="rate">-</span></div>
+    <div class="row"><span class="dim">Tilt (fwd / right)</span><span id="tilt">-</span></div>
+    <div class="row"><span class="dim">Simulator</span><span id="sim">-</span></div>
+  </div>
+  <div class="card help" id="howto2"></div>
+  <button class="wide" onclick="location.reload()">Change role</button>
+</div>
+
+<script>
+"use strict";
+var role = null;
+try { role = localStorage.getItem("ab206_role"); } catch (e) {}
+var HOW = {
+  cyclic: "<b>Cyclic:</b> hold the phone flat or slightly tilted towards you, like the top of a stick. " +
+    "<b>Tilt the top edge away</b> = cyclic forward (nose down, speed up). <b>Tilt right / left</b> = lateral cyclic. " +
+    "The stick stays where you hold it, like the real cyclic. Full deflection is about 20 degrees of tilt (change it on the PC, F10). " +
+    "Rest your elbow on something: small, smooth movements.",
+  collective: "<b>Collective:</b> hold the phone in your left hand, screen up, top edge pointing forward, like the end of the lever. " +
+    "Press Start with it in the <b>lever fully down</b> position. <b>Raise the top edge</b> to pull collective up (the real lever pivots at its back end, so it is an angle, not a height). " +
+    "About 35 degrees = fully up. It stays where you hold it. Optional on the PC: rotate the phone about its long axis = throttle twist grip."
+};
+var ws = null, usePost = false, connected = false, running = false;
+var beta = 0, gamma = 0, have = false, nEv = 0, rate = 0, rateT = performance.now();
+var lastSend = 0, wakeLock = null, engaged = "", simText = "";
+var p0 = null, r0 = null;     // local copy only for drawing
+var permNote = "";
+var dropped = 0, rtt = -1;
+
+function pickRole(r) {
+  role = r;
+  try { localStorage.setItem("ab206_role", r); } catch (e) {}
+  document.getElementById("r_cyclic").className = r === "cyclic" ? "sel" : "";
+  document.getElementById("r_collective").className = r === "collective" ? "sel" : "";
+  document.getElementById("howto").innerHTML = HOW[r];
+  document.getElementById("howto2").innerHTML = HOW[r];
+}
+if (role === "cyclic" || role === "collective") pickRole(role); else pickRole("cyclic");
+
+if (!window.isSecureContext) {
+  var w = document.getElementById("secwarn");
+  w.classList.remove("hidden");
+  var hs = "https://" + location.hostname + ":8206";
+  w.innerHTML = "This page is not on a secure (https) address, so most phone browsers will NOT give it the motion sensors. " +
+    "If nothing moves after Start, open <b>" + hs + "</b> instead and accept the certificate warning (it is this simulator's own certificate).";
+}
+
+function screenAngle() {
+  if (screen.orientation && typeof screen.orientation.angle === "number") return screen.orientation.angle;
+  if (typeof window.orientation === "number") return window.orientation;
+  return 0;
+}
+
+function onOri(e) {
+  if (e.beta === null || e.gamma === null) return;
+  beta = e.beta; gamma = e.gamma; have = true; nEv++;
+  var now = performance.now();
+  send(); lastSend = now;      // every sensor event goes out at once (no batching)
+}
+
+function line() {
+  return "o," + role + "," + beta.toFixed(2) + "," + gamma.toFixed(2) + "," + screenAngle();
+}
+
+function send() {
+  if (!have) return;
+  if (ws && ws.readyState === 1) {
+    // never queue old samples: if the Wi-Fi stalls, drop this one and send the newest next time
+    if (ws.bufferedAmount > 0) { dropped++; return; }
+    ws.send(line());
+  }
+  else if (usePost) { postQueue = line(); }
+}
+
+var postQueue = null, postBusy = false;
+function postLoop() {
+  if (!running || !usePost) return;
+  if (postBusy) return;
+  var body = postQueue; postQueue = null;
+  if (body === null) { setTimeout(postLoop, 8); return; }
+  postBusy = true;
+  fetch("/m", { method: "POST", body: body, cache: "no-store" }).then(function (r) { return r.text(); })
+    .then(function (t) { connected = true; t.split("\n").forEach(handle); })
+    .catch(function () { connected = false; })
+    .then(function () { postBusy = false; setTimeout(postLoop, 0); });
+}
+
+function connectWs() {
+  var url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+  var opened = false;
+  try { ws = new WebSocket(url); } catch (e) { ws = null; }
+  if (!ws) { usePost = true; postLoop(); return; }
+  var to = setTimeout(function () {
+    if (!opened) { try { ws.close(); } catch (e) {} ws = null; usePost = true; postLoop(); }
+  }, 2500);
+  ws.onopen = function () { opened = true; clearTimeout(to); connected = true; ws.send("h," + role); };
+  ws.onmessage = function (m) { String(m.data).split("\n").forEach(handle); };
+  ws.onclose = function () {
+    connected = false;
+    if (opened && running && !usePost) setTimeout(connectWs, 1000);
+    else if (!opened && running && !usePost) { clearTimeout(to); usePost = true; postLoop(); }
+  };
+}
+
+function handle(t) {
+  var f = t.split(",");
+  if (f[0] === "n") { p0 = null; r0 = null; }
+  else if (f[0] === "q") { var r = performance.now() - parseFloat(f[1]); rtt = rtt < 0 ? r : rtt * 0.7 + r * 0.3; }
+  else if (f[0] === "s") { engaged = f[2] || ""; simText = f.slice(3).join(", "); }
+  else if (f[0] === "v" && navigator.vibrate) { navigator.vibrate(parseInt(f[1], 10) || 50); }
+}
+
+function calibrate() {
+  p0 = null; r0 = null;
+  var m = "c," + role;
+  if (ws && ws.readyState === 1) ws.send(m); else if (usePost) postQueue = (postQueue ? postQueue + "\n" : "") + m;
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+async function lockScreen() {
+  try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && running) lockScreen(); });
+
+async function start() {
+  try {
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+      var st = await DeviceOrientationEvent.requestPermission();   // iPhone / iPad: must be a tap
+      if (st !== "granted") permNote = "Motion access was refused (" + st + "). iPhone: Settings > Apps > Safari > Motion & Orientation Access, then reload. Android: site settings > Motion sensors > Allow.";
+    }
+  } catch (e) { permNote = "Could not ask for motion access: " + e; }
+  window.addEventListener("deviceorientation", onOri);
+  running = true;
+  document.getElementById("setup").classList.add("hidden");
+  document.getElementById("live").classList.remove("hidden");
+  connectWs();
+  setInterval(function () { if (have && performance.now() - lastSend > 50) send(); }, 50);   // heartbeat when the phone is still
+  setInterval(function () { if (ws && ws.readyState === 1) ws.send("p," + role + "," + performance.now().toFixed(1)); }, 1000);
+  requestAnimationFrame(draw);
+  lockScreen();
+  // full screen + orientation lock so an auto-rotate cannot flip the axes mid-flight (best effort)
+  try {
+    var fs = document.documentElement.requestFullscreen ? document.documentElement.requestFullscreen() : null;
+    if (fs && fs.then) fs.then(function () {
+      if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(function () {});
+    }).catch(function () {});
+  } catch (e) {}
+}
+
+function tiltNow() {
+  // same maths as the simulator (phone_server.gd), for the on-screen picture only
+  var b = beta * Math.PI / 180, g = gamma * Math.PI / 180, a = screenAngle() * Math.PI / 180;
+  var dx = Math.sin(g) * Math.cos(b), dy = -Math.sin(b), dz = -Math.cos(g) * Math.cos(b);
+  var sx = dx * Math.cos(a) - dy * Math.sin(a), sy = dx * Math.sin(a) + dy * Math.cos(a);
+  var pitch = Math.atan2(sy, -dz) * 180 / Math.PI, roll = Math.asin(Math.max(-1, Math.min(1, sx))) * 180 / Math.PI;
+  if (p0 === null) { p0 = pitch; r0 = roll; }
+  var dp = ((pitch - p0 + 540) % 360) - 180, dr = ((roll - r0 + 540) % 360) - 180;
+  return [dp, dr];
+}
+
+function draw() {
+  var cv = document.getElementById("cv"), c = cv.getContext("2d");
+  var W = cv.width, H = cv.height;
+  c.clearRect(0, 0, W, H);
+  var now = performance.now();
+  if (now - rateT > 1000) { rate = nEv * 1000 / (now - rateT); nEv = 0; rateT = now; }
+  var t = have ? tiltNow() : [0, 0];
+  if (role === "cyclic") {
+    var R = 120, cx = W / 2, cy = H / 2;
+    c.strokeStyle = "#2c353e"; c.lineWidth = 2;
+    c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();
+    c.beginPath(); c.moveTo(cx - R, cy); c.lineTo(cx + R, cy); c.moveTo(cx, cy - R); c.lineTo(cx, cy + R); c.stroke();
+    var x = Math.max(-1, Math.min(1, t[1] / 20)), y = Math.max(-1, Math.min(1, t[0] / 20));
+    c.fillStyle = "#f2b53a"; c.beginPath(); c.arc(cx + x * R, cy - y * R, 14, 0, 7); c.fill();
+    c.fillStyle = "#8a96a3"; c.font = "14px system-ui"; c.fillText("FWD", cx - 14, cy - R - 8); c.fillText("AFT", cx - 13, cy + R + 20);
+  } else {
+    var up = Math.max(0, Math.min(1, (-t[0] - 2) / 35));
+    c.fillStyle = "#2c353e"; c.fillRect(W / 2 - 40, 20, 80, H - 40);
+    c.fillStyle = "#f2b53a"; c.fillRect(W / 2 - 40, 20 + (H - 40) * (1 - up), 80, (H - 40) * up);
+    c.fillStyle = "#e8edf2"; c.font = "15px system-ui"; c.fillText("UP", W / 2 + 52, 34); c.fillText("DOWN", W / 2 + 52, H - 22);
+  }
+  var en = document.getElementById("engage");
+  if (!have) { en.textContent = permNote || (window.isSecureContext ? "No motion data yet - move the phone" : "No motion data: open the https:// address instead"); en.style.background = "#3a1f1c"; }
+  else if (!connected) { en.textContent = "Not connected to the simulator"; en.style.background = "#3a1f1c"; }
+  else if (engaged === "1") { en.textContent = "IN CONTROL"; en.style.background = "#1d3a24"; }
+  else if (engaged === "0") { en.textContent = "Instructor has the " + role + " - it comes back to you automatically"; en.style.background = "#3a311c"; }
+  else { en.textContent = "Connected"; en.style.background = "#1d3a24"; }
+  var lat = rtt >= 0 ? " " + Math.round(rtt) + " ms round trip" : "";
+  var cls = rtt > 80 ? "warn" : "ok";
+  document.getElementById("link").innerHTML = connected ? '<span class="' + (usePost ? "warn" : cls) + '">' + (usePost ? "HTTP (slower)" : "WebSocket") + lat + "</span>" : '<span class="bad">offline</span>';
+  document.getElementById("rate").textContent = have ? rate.toFixed(0) + " Hz" : (running ? "waiting..." : "-");
+  document.getElementById("tilt").textContent = t[0].toFixed(1) + " / " + t[1].toFixed(1) + " deg";
+  document.getElementById("sim").textContent = simText || "-";
+  requestAnimationFrame(draw);
+}
+</script>
+</body>
+</html>
