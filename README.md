@@ -36,7 +36,7 @@ The phone tilt controller (F10) and joystick setup only work in the Windows vers
 | Camera | **V** | Cockpit, chase, free (I J K L U O to move) |
 | Pause / menu | **P** / **Esc** | Glass menu with 4 tabs: **Fly** (resets, assist, training speed, weight), **Lessons** (all levels with best scores), **Weather**, **Settings** (training displays, instructor, controls, joystick, phone, graphics, sound, quit) |
 | Resets | **F2** pad, **F3** hover 5 m, **F4** cruise 80 kt, **F5** autorotation practice | All resets are trimmed by the flight model |
-| Phone controller | **F10**, **N** | Tilt a phone as the cyclic and/or a second phone as the collective. N = set phone neutral |
+| Phone controller | **F10**, **N** | Up to three phones: cyclic, collective and pedals (feet). N = set phone neutral |
 | Training levels | **Esc > Training levels** | H1-H6 hover (part-task, then full), L1-L4 take-off and landing, E1-E3 other. Scores, debrief, best score. See `docs/TRAINING.md` |
 | Take control | **T** | After a part-task level, take all controls back from the instructor |
 | Hover guide circle | **G** | Training-aid display: drift, spot, height band, heading (on/off) |
@@ -67,7 +67,7 @@ The phone tilt controller (F10) and joystick setup only work in the Windows vers
 Lower the collective immediately, hold 55-65 kt, keep rotor rpm 90-107% with the collective, and
 either roll the throttle back on (**R**) for a power recovery or continue to a landing.
 
-## Phone as cyclic / collective (new in M2)
+## Phone as cyclic / collective / pedals (new in M2, pedals in M2.12)
 
 Your phone becomes a motion controller over your home Wi-Fi. Nothing to install on the phone.
 
@@ -76,7 +76,7 @@ Your phone becomes a motion controller over your home Wi-Fi. Nothing to install 
 2. On the phone (same Wi-Fi as the PC) scan the QR code, or type the `https://...:8206` address shown.
    The phone warns about the certificate: tap *Advanced > Proceed* (Android) or *Show details > visit
    this website* (iPhone). It is the simulator's own certificate, created on your PC.
-3. Choose **Cyclic** or **Collective**, hold the phone in its neutral position and tap **Start**
+3. Choose **Cyclic**, **Collective** or **Pedals**, hold the phone in its neutral position and tap **Start**
    (iPhone asks for motion access: allow).
    - **Cyclic** (right hand): tilt the top edge away = forward cyclic, tilt left/right = lateral cyclic.
      About 20 degrees of tilt = full deflection. The stick stays where you hold it.
@@ -85,10 +85,15 @@ Your phone becomes a motion controller over your home Wi-Fi. Nothing to install 
      so an angle is the natural movement. Optional twist grip throttle in F10.
 4. The phone takes over at once from the control's current position (its screen says **IN CONTROL**),
    so connecting, a reset or an instructor hand-over never jerks the controls; any difference
-   between phone angle and control melts away as you move the phone. **N** re-centres (cyclic centre / collective down).
-   If a phone drops out, the control stays where it was and keyboard/mouse take over.
+   between phone angle and control melts away as you move the phone. **N** re-centres (cyclic centre / collective down / pedals centred).
+   If a phone drops out, the control stays where it was and the phone reconnects by itself (M2.12).
 5. Use two phones for both hands, or one phone for the collective and the mouse for the cyclic.
-   Pedals stay on A/D (Q/E trim). Android phones vibrate on the low-rotor-RPM warning and on firm landings.
+   A third phone can work the pedals with your feet (otherwise A/D, Q/E trim):
+   - **Turn** mode: phone flat, screen up, on a pedal bar that turns on a turntable (see the DIY pedals
+     guide). Right foot forward = right pedal. Uses the phone's gyro heading, which can drift slowly
+     (estimate, depends on the phone): press **N** with your feet level if the centre moves.
+   - **Rock** mode: phone flat on a board that tilts left/right; right side down = right pedal. No drift.
+   Choose the mode, range, dead zone and invert in F10. Android phones vibrate on the low-rotor-RPM warning and on firm landings.
 
 If the https address does not give motion data, try the `http://...:8207` address shown in F10.
 Ranges, dead zone, expo, smoothing and inversion are in F10 and are saved.

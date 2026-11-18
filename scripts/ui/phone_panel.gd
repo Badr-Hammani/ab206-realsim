@@ -110,7 +110,7 @@ func _rebuild() -> void:
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.add_child(G.label("AB206 REALSIM  ·  SETUP", 12, G.TEXT3))
 	tv.add_child(G.label("Phone controller", 30, G.TEXT))
-	tv.add_child(G.label("Tilt one phone as the cyclic and a second one as the collective. Settings are saved.", 13, G.TEXT2))
+	tv.add_child(G.label("Up to three phones: cyclic, collective and pedals (feet). Settings are saved.", 13, G.TEXT2))
 	head.add_child(tv)
 	var done := Button.new()
 	done.text = "Done"
@@ -173,12 +173,12 @@ func _rebuild() -> void:
 	status_box = VBoxContainer.new()
 	status_box.add_theme_constant_override("separation", 6)
 	live.add_child(status_box)
-	for r in ["cyclic", "collective"]:
+	for r in ["cyclic", "collective", "pedals"]:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		var dot := G.label("●", 16, G.TEXT3)
 		row.add_child(dot)
-		var name := G.label(r.capitalize() + " phone", 15, G.TEXT)
+		var name := G.label(("Pedal" if r == "pedals" else r.capitalize()) + " phone", 15, G.TEXT)
 		name.custom_minimum_size = Vector2(140, 0)
 		row.add_child(name)
 		var info := G.label("", 13, G.TEXT2, true)
@@ -212,9 +212,29 @@ func _rebuild() -> void:
 	_switch(c2, "Twist grip = throttle (rotate about long axis)", phone.twist_throttle, func(v: bool) -> void: phone.twist_throttle = v)
 	_switch(c2, "Invert twist direction", phone.twist_invert, func(v: bool) -> void: phone.twist_invert = v)
 	_slider(c2, "Twist to idle", 15.0, 70.0, 1.0, phone.twist_range_deg, "%.0f°", func(v: float) -> void: phone.twist_range_deg = v)
+	var c3 := _section(box, "Pedal phone (feet)")
+	var mh := HBoxContainer.new()
+	var ml := G.label("How the phone moves", 14, G.TEXT)
+	ml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mh.add_child(ml)
+	for i in 2:
+		var mb := Button.new()
+		mb.text = ["Turn  (pedal bar on a turntable)", "Rock  (tilt left / right)"][i]
+		mb.toggle_mode = true
+		mb.button_pressed = phone.ped_mode == i
+		mb.pressed.connect(func() -> void:
+			phone.ped_mode = i
+			phone.calibrate("pedals")
+			_rebuild())
+		mh.add_child(mb)
+	c3.add_child(mh)
+	_slider(c3, "Turn / tilt for full pedal", 5.0, 45.0, 1.0, phone.ped_range_deg, "%.0f°", func(v: float) -> void: phone.ped_range_deg = v)
+	_slider(c3, "Centre dead zone", 0.0, 6.0, 0.25, phone.ped_deadzone_deg, "%.2f°", func(v: float) -> void: phone.ped_deadzone_deg = v)
+	_switch(c3, "Invert pedals", phone.ped_invert, func(v: bool) -> void: phone.ped_invert = v)
+	c3.add_child(G.label("Turn: lay the phone flat, screen up, on the pedal bar (the DIY pedals turn on a lazy susan). Right foot forward = right pedal. It uses the phone's gyro heading, which can drift slowly: if the pedals no longer centre, press N with your feet level. Rock: lay the phone on a board that rocks left/right under your feet; right side down = right pedal. No drift.", 12, G.TEXT3, true))
 	var adv := _section(box, "Advanced")
 	_slider(adv, "Smoothing (adds lag; 0 = none)", 0.0, 150.0, 5.0, phone.smoothing_ms, "%.0f ms", func(v: float) -> void: phone.smoothing_ms = v)
-	box.add_child(G.label("How it takes over: a phone controls its lever from the moment it connects. The helicopter does not jump: any difference between the phone and the current control position fades out as you move the phone. Neutral = cyclic centred / collective fully down. If a phone drops, the control stays where it was and the phone reconnects by itself. Keep the phone page open and the screen on. If this PC uses the phone's hotspot, keep that phone's screen on too. Phone tilt is not a real cyclic (no stick force), so fly with small, smooth movements.", 12, G.TEXT3, true))
+	box.add_child(G.label("How it takes over: a phone controls its lever from the moment it connects. The helicopter does not jump: any difference between the phone and the current control position fades out as you move the phone. Neutral = cyclic centred / collective fully down / pedals centred. If a phone drops, the control stays where it was and the phone reconnects by itself. Keep the phone page open and the screen on. If this PC uses the phone's hotspot, keep that phone's screen on too. Phone tilt is not a real cyclic (no stick force), so fly with small, smooth movements.", 12, G.TEXT3, true))
 	box.add_child(G.label("F10 or Esc  close", 11, G.TEXT3))
 
 func _process(_dt: float) -> void:
@@ -237,9 +257,14 @@ func _process(_dt: float) -> void:
 		elif phone.roles.has(r):
 			var s: Dictionary = phone.roles[r]
 			var tl: Vector2 = phone.tilt_deg(r)
-			var eng: bool = controls.phone_cyc_engaged if r == "cyclic" else controls.phone_coll_engaged
+			var eng: bool = controls.phone_engaged(r)
 			col = G.GOOD if eng else G.WARN
-			t = "%s  ·  %.0f Hz  ·  longest gap %.0f ms  ·  tilt fwd %+.1f°  right %+.1f°" % ["IN CONTROL" if eng else "connected (instructor has it)", float(s["rate"]), float(s.get("gap_max", 0.0)), tl.x, tl.y]
+			var mv := "tilt fwd %+.1f°  right %+.1f°" % [tl.x, tl.y]
+			if r == "pedals":
+				mv = "%s %+.1f° (right +)" % ["turned" if phone.ped_mode == 0 else "rocked", phone.pedal_deg()]
+				if phone.ped_mode == 0 and not s.get("has_yaw", false):
+					mv += "  -  this phone sends no heading: use Rock mode"
+			t = "%s  ·  %.0f Hz  ·  longest gap %.0f ms  ·  %s" % ["IN CONTROL" if eng else "connected (instructor has it)", float(s["rate"]), float(s.get("gap_max", 0.0)), mv]
 		elif phone.lost_at.has(r):
 			col = G.DANGER
 			t = "signal lost %.0f s ago - waiting for the phone to reconnect (keep its page open and screen on)" % (now - float(phone.lost_at[r]))
@@ -254,7 +279,7 @@ func _process(_dt: float) -> void:
 func _draw_bars() -> void:
 	var font: Font = ui_theme.default_font if ui_theme and ui_theme.default_font else ThemeDB.fallback_font
 	var c = controls
-	var outs := [["Cyc lat", c.cyclic_lat, true], ["Cyc lon", c.cyclic_lon, true], ["Coll", c.collective, false], ["Thr", c.throttle, false]]
+	var outs := [["Cyc lat", c.cyclic_lat, true], ["Cyc lon", c.cyclic_lon, true], ["Coll", c.collective, false], ["Pedal", c.pedal, true], ["Thr", c.throttle, false]]
 	var w := bars.size.x / outs.size()
 	for i in outs.size():
 		var x := i * w

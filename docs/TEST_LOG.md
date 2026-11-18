@@ -255,3 +255,11 @@ back from the lock screen / another app) the phone drops the dead socket and rec
 (Pixel 7 emulation) as cyclic, PC side frozen for 4 s with SIGSTOP: phone showed "Reconnecting...", then
 "IN CONTROL" again ~1 s after the PC resumed ("reconnected 1x"). Not yet tested on a real iPhone hotspot.
 Training suite 101/101, flight model 41/41. Screenshots (1600x900) of F10, F8, F1, lesson HUD checked by eye.
+
+Pedal phone (also M2.12): third phone role "pedals". Turn mode = W3C alpha (heading) relative to neutral,
++ = counter-clockwise from above = right foot forward on the DIY turntable bar = right pedal; Rock mode = left/right
+tilt (gravity, no drift). Same take-over (offset melts with movement), lost = pedals stay, N re-centres.
+Test: three Playwright phones (Pixel 7 emulation) at once, all IN CONTROL at ~63 Hz each. Turn: alpha 100 -> 110
+gave pedal +0.47 (20 deg range, 1 deg dead zone: 9/19 = 0.47), 90 -> -0.47, 355 (wraps to -105 deg) -> -1.00.
+Rock: gamma +10 -> +0.47, -5 -> -0.21, alpha changes ignored. Gyro-heading drift on real phones NOT measured
+(estimate only); a real foot test has not been done.

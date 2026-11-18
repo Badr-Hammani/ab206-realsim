@@ -46,6 +46,10 @@ var phone_coll := 0.0
 var phone_thr := 1.0
 var phone_cyc_off := Vector2.ZERO   # control minus phone at take-over, melts with movement
 var phone_coll_off := 0.0
+var phone_ped_engaged := false
+var phone_ped := 0.0
+var phone_ped_off := 0.0
+var _phone_ped_prev := 0.0
 var _phone_cyc_prev := Vector2.ZERO
 var _phone_coll_prev := 0.0
 
@@ -100,12 +104,14 @@ func follow(hold: Dictionary, coll: float, lon: float, lat: float, ped: float) -
 	if hold["ped"]:
 		pedal_trim = clampf(ped - pedal_key, -1.0, 1.0)
 		pedal = ped
+		phone_ped_engaged = false
 
 ## Phones re-take their axes from the current control position (after resets/recalibration/hand-overs).
 func phone_release() -> void:
 	phone_cyc_engaged = false
 	phone_coll_engaged = false
 	phone_thr_engaged = false
+	phone_ped_engaged = false
 
 func _update_phone(dt: float) -> void:
 	if phone == null:
@@ -144,6 +150,25 @@ func _update_phone(dt: float) -> void:
 	else:
 		phone_coll_engaged = false
 		phone_thr_engaged = false
+	if phone.has_role("pedals"):
+		phone_ped = float(phone.axes("pedals", dt)["ped"])
+		if not phone_ped_engaged:
+			phone_ped_engaged = true
+			phone_ped_off = pedal - phone_ped      # no jump at take-over; the difference melts as the feet move
+		else:
+			phone_ped_off = move_toward(phone_ped_off, 0.0, absf(phone_ped - _phone_ped_prev) * PHONE_CATCHUP)
+		_phone_ped_prev = phone_ped
+	elif phone_ped_engaged:
+		pedal_trim = clampf(phone_ped + phone_ped_off, -1.0, 1.0)   # phone lost: pedals stay where they were
+		pedal_key = 0.0
+		phone_ped_engaged = false
+
+func phone_engaged(role: String) -> bool:
+	match role:
+		"cyclic": return phone_cyc_engaged
+		"collective": return phone_coll_engaged
+		"pedals": return phone_ped_engaged
+	return false
 
 func _phone_cyc_out() -> Vector2:
 	var v := phone_cyc + phone_cyc_off
@@ -248,6 +273,8 @@ func _combine() -> void:
 		collective = clampf(phone_coll + phone_coll_off, 0.0, 1.0)
 	if phone_thr_engaged:
 		throttle = phone_thr
+	if phone_ped_engaged:
+		pedal = clampf(phone_ped + phone_ped_off, -1.0, 1.0)
 
 func save_config() -> void:
 	var cf := ConfigFile.new()

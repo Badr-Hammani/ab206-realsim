@@ -10,6 +10,13 @@ extends Node
 ##   "cyclic"     tilt the phone forward/back = cyclic fore/aft, tilt left/right = lateral cyclic
 ##   "collective" hold the phone like the collective lever: raise its front edge = collective up.
 ##                Optional: rotate it about its long axis = throttle twist grip.
+##   "pedals"     anti-torque pedals with your feet. Two ways (F10):
+##                Turn: phone lies on a pedal bar that turns on a turntable (lazy susan, see
+##                      hardware/diy_pedals); the bar's rotation = pedal. Uses the browser's
+##                      gyro-based heading (alpha) relative to "neutral" - it can drift slowly
+##                      (estimated a few degrees per 10 min, phone dependent): press N to re-centre.
+##                Rock: phone lies on a rocker board; tilting it left/right = pedal. Gravity-based,
+##                      no drift.
 ##
 ## Only the direction of gravity in the phone's own frame is used (pitch and roll of the phone),
 ## never the compass heading, so there is no yaw drift. Moving the phone up and down without
@@ -52,6 +59,10 @@ var coll_invert := false
 var twist_throttle := false      # collective phone also works the twist grip
 var twist_range_deg := 35.0
 var twist_invert := false
+var ped_mode := 0                # 0 = turn (turntable, heading), 1 = rock (left/right tilt)
+var ped_range_deg := 20.0        # bar rotation / rocker tilt for full pedal
+var ped_deadzone_deg := 1.0
+var ped_invert := false
 var smoothing_ms := 0.0          # extra low-pass (ms); 0 = none, the phone already fuses its sensors
 
 # ------------------------------------------------------------------- state
@@ -188,6 +199,8 @@ func _process(dt: float) -> void:
 		for c in _conns:
 			if c.ws and c.role != "":
 				_ws_send(c, "s," + c.role + "," + str(role_status.get(c.role, "")))
+				if c.role == "pedals":
+					_ws_send(c, "m," + ("turn" if ped_mode == 0 else "rock"))
 
 func poll() -> void:
 	while _srv_tls and _srv_tls.is_listening() and _srv_tls.is_connection_available():
@@ -328,6 +341,8 @@ func _http_parse(c: Conn) -> void:
 			for line in body.get_string_from_utf8().split("\n", false):
 				role = _handle_message(line, null)
 			var reply := ("s," + role + "," + str(role_status.get(role, ""))) if role != "" else ""
+			if role == "pedals":
+				reply += "\nm," + ("turn" if ped_mode == 0 else "rock")
 			for v in _pending_buzz:
 				reply += "\n" + v
 			_pending_buzz.clear()
@@ -418,13 +433,13 @@ func _handle_message(line: String, c) -> String:
 	if f.size() < 2:
 		return ""
 	var role := f[1]
-	if role != "cyclic" and role != "collective":
+	if role != "cyclic" and role != "collective" and role != "pedals":
 		return ""
 	match f[0]:
 		"o":
 			if f.size() < 5:
 				return ""
-			feed(role, float(f[2]), float(f[3]), float(f[4]))
+			feed(role, float(f[2]), float(f[3]), float(f[4]), float(f[5]) if f.size() >= 6 and f[5] != "" else NAN)
 		"c":
 			if roles.has(role):
 				calibrate(role)
@@ -441,7 +456,7 @@ func _handle_message(line: String, c) -> String:
 func _role_state(role: String) -> Dictionary:
 	if not roles.has(role):
 		lost_at.erase(role)
-		roles[role] = {"pitch": 0.0, "roll": 0.0, "p0": 0.0, "r0": 0.0, "cal": false, "t": _now(),
+		roles[role] = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "p0": 0.0, "r0": 0.0, "y0": 0.0, "has_yaw": false, "cal": false, "t": _now(),
 			"n": 0, "rate": 0.0, "rate_t": _now(), "f_a": 0.0, "f_b": 0.0, "f_c": 1.0, "first": true}
 		role_connected.emit(role)
 	return roles[role]
@@ -450,8 +465,11 @@ func _role_state(role: String) -> Dictionary:
 ## in the screen frame (so it works in portrait or landscape).
 ## W3C: device x right, y top of screen, z out of the screen; R = Rz(alpha) Rx(beta) Ry(gamma).
 ## Gravity direction in device axes = (sin g cos b, -sin b, -cos g cos b) (alpha drops out).
-func feed(role: String, beta_deg: float, gamma_deg: float, screen_deg: float) -> void:
+func feed(role: String, beta_deg: float, gamma_deg: float, screen_deg: float, alpha_deg := NAN) -> void:
 	var s := _role_state(role)
+	if not is_nan(alpha_deg):
+		s["yaw"] = alpha_deg       # W3C alpha: + = counter-clockwise seen from above (phone flat, screen up)
+		s["has_yaw"] = true
 	var b := deg_to_rad(beta_deg)
 	var g := deg_to_rad(gamma_deg)
 	var d := Vector3(sin(g) * cos(b), -sin(b), -cos(g) * cos(b))
@@ -476,13 +494,14 @@ func feed(role: String, beta_deg: float, gamma_deg: float, screen_deg: float) ->
 	if not s["cal"]:
 		calibrate(role)
 
-## "Set neutral here": cyclic = centred, collective = lever fully down (throttle fully open).
+## "Set neutral here": cyclic = centred, collective = lever fully down (throttle fully open), pedals = centred.
 func calibrate(role: String) -> void:
 	if not roles.has(role):
 		return
 	var s: Dictionary = roles[role]
 	s["p0"] = s["pitch"]
 	s["r0"] = s["roll"]
+	s["y0"] = s["yaw"]
 	s["cal"] = true
 	s["first"] = true
 	for c in _conns:
@@ -515,15 +534,27 @@ func tilt_deg(role: String) -> Vector2:
 	var s: Dictionary = roles[role]
 	return Vector2(_wrap180(float(s["pitch"]) - float(s["p0"])), _wrap180(float(s["roll"]) - float(s["r0"])))
 
+## Pedal-phone rotation relative to neutral, degrees: + = right pedal (before invert).
+func pedal_deg() -> float:
+	if not roles.has("pedals"):
+		return 0.0
+	var s: Dictionary = roles["pedals"]
+	if ped_mode == 0:
+		# right pedal forward turns the bar counter-clockwise seen from above = alpha increases
+		return _wrap180(float(s["yaw"]) - float(s["y0"]))
+	return _wrap180(float(s["roll"]) - float(s["r0"]))      # right edge down = right pedal
+
 ## Normalised control outputs, low-pass filtered. Call once per physics tick.
-## Returns {"lon","lat"} for cyclic, {"coll","thr"} for collective.
+## Returns {"lon","lat"} for cyclic, {"coll","thr"} for collective, {"ped"} for pedals.
 func axes(role: String, dt: float) -> Dictionary:
 	var s: Dictionary = roles[role]
 	var t := tilt_deg(role)
 	var a := 0.0
 	var b := 0.0
 	var c := 1.0
-	if role == "cyclic":
+	if role == "pedals":
+		a = _shape_centered(pedal_deg(), ped_range_deg, ped_deadzone_deg, 0.0) * (-1.0 if ped_invert else 1.0)
+	elif role == "cyclic":
 		a = _shape_centered(t.x, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lon else 1.0)
 		b = _shape_centered(t.y, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lat else 1.0)
 	else:
@@ -537,6 +568,8 @@ func axes(role: String, dt: float) -> Dictionary:
 	s["f_a"] = lerpf(float(s["f_a"]), a, k)
 	s["f_b"] = lerpf(float(s["f_b"]), b, k)
 	s["f_c"] = lerpf(float(s["f_c"]), c, k)
+	if role == "pedals":
+		return {"ped": float(s["f_a"])}
 	if role == "cyclic":
 		return {"lon": float(s["f_a"]), "lat": float(s["f_b"])}
 	return {"coll": float(s["f_a"]), "thr": float(s["f_c"])}
@@ -559,7 +592,8 @@ func _now() -> float:
 
 # -------------------------------------------------------------------- config
 const _KEYS := ["cyc_range_deg", "cyc_deadzone_deg", "cyc_expo", "cyc_invert_lon", "cyc_invert_lat",
-	"coll_range_deg", "coll_deadband_deg", "coll_invert", "twist_throttle", "twist_range_deg", "twist_invert", "smoothing_ms"]
+	"coll_range_deg", "coll_deadband_deg", "coll_invert", "twist_throttle", "twist_range_deg", "twist_invert", "smoothing_ms",
+	"ped_mode", "ped_range_deg", "ped_deadzone_deg", "ped_invert"]
 
 var autostart := false
 

@@ -132,7 +132,7 @@ func _ready() -> void:
 	add_child(phone)
 	controls.phone = phone
 	phone.role_connected.connect(func(r: String) -> void:
-		instructor.force("PHONE %s connected. It controls the %s from its current position right away." % [r.to_upper(), r]))
+		instructor.force("PHONE %s connected. It controls the %s from %s current position right away." % [r.to_upper(), r, "their" if r == "pedals" else "its"]))
 	phone.role_lost.connect(func(r: String) -> void:
 		instructor.force("PHONE %s lost. The control stays where it was; keyboard/mouse have it again." % r.to_upper()))
 	phone.calibrated.connect(func(_r: String) -> void: controls.phone_release())
@@ -336,7 +336,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_N:
 			if phone.running and not phone.roles.is_empty():
 				phone.calibrate_all()
-				instructor.force("Phone neutral set: cyclic phone = centre, collective phone = lever fully down. The phones keep control; the controls do not jump.")
+				instructor.force("Phone neutral set: cyclic phone = centre, collective phone = lever fully down, pedal phone = pedals centred. The phones keep control; the controls do not jump.")
 		KEY_F9:
 			instructor.enabled = not instructor.enabled
 			if not instructor.enabled:
@@ -621,6 +621,7 @@ func _phone_feedback(delta: float, vals: Dictionary) -> void:
 	var txt := "NR %.0f%%  TQ %.0f%%  %s" % [vals["nr"], vals["tq"], "ROTOR LOW RPM" if vals["low_rpm"] else ""]
 	phone.role_status["cyclic"] = "%d,%s" % [1 if controls.phone_cyc_engaged else 0, txt]
 	phone.role_status["collective"] = "%d,%s" % [1 if controls.phone_coll_engaged else 0, txt]
+	phone.role_status["pedals"] = "%d,%s" % [1 if controls.phone_ped_engaged else 0, txt]
 	_buzz_t -= delta
 	if vals["low_rpm"] and not paused and _buzz_t <= 0.0:
 		phone.buzz(250)
@@ -655,9 +656,9 @@ func _status_text() -> String:
 		s += "   |   TRAINING SPEED %d%% (Y)" % int(round(sim_speed * 100.0))
 	if phone.running:
 		var ps := []
-		for r in ["cyclic", "collective"]:
+		for r in ["cyclic", "collective", "pedals"]:
 			if phone.roles.has(r):
-				var eng: bool = controls.phone_cyc_engaged if r == "cyclic" else controls.phone_coll_engaged
+				var eng: bool = controls.phone_engaged(r)
 				ps.append(r + (" IN CONTROL" if eng else " (waiting)"))
 		s += "   |   phone: " + (", ".join(ps) if ps.size() > 0 else "server on, no phone (F10)")
 	if paused:

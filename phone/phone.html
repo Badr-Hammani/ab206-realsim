@@ -38,6 +38,7 @@
   <div class="roles">
     <button id="r_cyclic" onclick="pickRole('cyclic')">Cyclic<br><span class="dim" style="font-weight:400;font-size:12px">right hand</span></button>
     <button id="r_collective" onclick="pickRole('collective')">Collective<br><span class="dim" style="font-weight:400;font-size:12px">left hand</span></button>
+    <button id="r_pedals" onclick="pickRole('pedals')">Pedals<br><span class="dim" style="font-weight:400;font-size:12px">feet</span></button>
   </div>
   <div class="card help" id="howto"></div>
   <div class="dim" style="font-size:14px">2. Hold it in the neutral position, then:</div>
@@ -70,9 +71,14 @@ var HOW = {
     "Rest your elbow on something: small, smooth movements.",
   collective: "<b>Collective:</b> hold the phone in your left hand, screen up, top edge pointing forward, like the end of the lever. " +
     "Press Start with it in the <b>lever fully down</b> position. <b>Raise the top edge</b> to pull collective up (the real lever pivots at its back end, so it is an angle, not a height). " +
-    "About 35 degrees = fully up. It stays where you hold it. Optional on the PC: rotate the phone about its long axis = throttle twist grip."
+    "About 35 degrees = fully up. It stays where you hold it. Optional on the PC: rotate the phone about its long axis = throttle twist grip.",
+  pedals: "<b>Pedals:</b> lay the phone <b>flat, screen up</b>, on your pedal bar or foot board, and press Start with your <b>feet level</b> (pedals centred). " +
+    "<b>Turn mode</b> (pedal bar on a turntable / lazy susan): right foot forward turns the bar = right pedal (nose right). " +
+    "<b>Rock mode</b> (board that tilts left/right): right side down = right pedal. Choose the mode on the PC (F10). " +
+    "Turn mode uses the phone's gyro heading, which can drift slowly - tap <b>Set neutral here</b> (or N on the PC) with your feet level if the centre moves."
 };
 var ws = null, usePost = false, connected = false, running = false;
+var alpha = null, pedMode = "turn";
 var beta = 0, gamma = 0, have = false, nEv = 0, rate = 0, rateT = performance.now();
 var lastSend = 0, wakeLock = null, engaged = "", simText = "";
 var p0 = null, r0 = null;     // local copy only for drawing
@@ -84,10 +90,11 @@ function pickRole(r) {
   try { localStorage.setItem("ab206_role", r); } catch (e) {}
   document.getElementById("r_cyclic").className = r === "cyclic" ? "sel" : "";
   document.getElementById("r_collective").className = r === "collective" ? "sel" : "";
+  document.getElementById("r_pedals").className = r === "pedals" ? "sel" : "";
   document.getElementById("howto").innerHTML = HOW[r];
   document.getElementById("howto2").innerHTML = HOW[r];
 }
-if (role === "cyclic" || role === "collective") pickRole(role); else pickRole("cyclic");
+if (role === "cyclic" || role === "collective" || role === "pedals") pickRole(role); else pickRole("cyclic");
 
 if (!window.isSecureContext) {
   var w = document.getElementById("secwarn");
@@ -105,13 +112,13 @@ function screenAngle() {
 
 function onOri(e) {
   if (e.beta === null || e.gamma === null) return;
-  beta = e.beta; gamma = e.gamma; have = true; nEv++;
+  beta = e.beta; gamma = e.gamma; alpha = (typeof e.alpha === "number") ? e.alpha : null; have = true; nEv++;
   var now = performance.now();
   send(); lastSend = now;      // every sensor event goes out at once (no batching)
 }
 
 function line() {
-  return "o," + role + "," + beta.toFixed(2) + "," + gamma.toFixed(2) + "," + screenAngle();
+  return "o," + role + "," + beta.toFixed(2) + "," + gamma.toFixed(2) + "," + screenAngle() + "," + (alpha === null ? "" : alpha.toFixed(2));
 }
 
 function send() {
@@ -176,14 +183,15 @@ function watchdog() {
 
 function handle(t) {
   var f = t.split(",");
-  if (f[0] === "n") { p0 = null; r0 = null; }
+  if (f[0] === "n") { p0 = null; r0 = null; a0 = null; }
+  else if (f[0] === "m") { pedMode = f[1] === "rock" ? "rock" : "turn"; }
   else if (f[0] === "q") { var r = performance.now() - parseFloat(f[1]); rtt = rtt < 0 ? r : rtt * 0.7 + r * 0.3; }
   else if (f[0] === "s") { engaged = f[2] || ""; simText = f.slice(3).join(", "); }
   else if (f[0] === "v" && navigator.vibrate) { navigator.vibrate(parseInt(f[1], 10) || 50); }
 }
 
 function calibrate() {
-  p0 = null; r0 = null;
+  p0 = null; r0 = null; a0 = null;
   var m = "c," + role;
   if (ws && ws.readyState === 1) ws.send(m); else if (usePost) postQueue = (postQueue ? postQueue + "\n" : "") + m;
   if (navigator.vibrate) navigator.vibrate(40);
@@ -226,6 +234,14 @@ async function start() {
   } catch (e) {}
 }
 
+var a0 = null;
+function pedalNow(t) {
+  if (pedMode === "rock") return t[1];
+  if (alpha === null) return 0;
+  if (a0 === null) a0 = alpha;
+  return ((alpha - a0 + 540) % 360) - 180;
+}
+
 function tiltNow() {
   // same maths as the simulator (phone_server.gd), for the on-screen picture only
   var b = beta * Math.PI / 180, g = gamma * Math.PI / 180, a = screenAngle() * Math.PI / 180;
@@ -252,6 +268,15 @@ function draw() {
     var x = Math.max(-1, Math.min(1, t[1] / 20)), y = Math.max(-1, Math.min(1, t[0] / 20));
     c.fillStyle = "#f2b53a"; c.beginPath(); c.arc(cx + x * R, cy - y * R, 14, 0, 7); c.fill();
     c.fillStyle = "#8a96a3"; c.font = "14px system-ui"; c.fillText("FWD", cx - 14, cy - R - 8); c.fillText("AFT", cx - 13, cy + R + 20);
+  } else if (role === "pedals") {
+    var pd = pedalNow(t), x2 = Math.max(-1, Math.min(1, pd / 20)), bw = W - 80, cy2 = H / 2;
+    c.fillStyle = "#2c353e"; c.fillRect(40, cy2 - 18, bw, 36);
+    c.fillStyle = "#f2b53a";
+    if (x2 >= 0) c.fillRect(W / 2, cy2 - 18, x2 * bw / 2, 36); else c.fillRect(W / 2 + x2 * bw / 2, cy2 - 18, -x2 * bw / 2, 36);
+    c.fillStyle = "#e8edf2"; c.fillRect(W / 2 - 1, cy2 - 26, 2, 52);
+    c.font = "15px system-ui"; c.fillText("LEFT", 40, cy2 - 32); c.fillText("RIGHT", W - 86, cy2 - 32);
+    c.fillStyle = "#8a96a3"; c.fillText((pedMode === "rock" ? "Rock" : "Turn") + " mode  " + pd.toFixed(1) + " deg", 40, cy2 + 56);
+    if (pedMode === "turn" && have && alpha === null) { c.fillStyle = "#ff6b5b"; c.fillText("This phone gives no heading: choose Rock mode on the PC (F10)", 40, cy2 + 80); }
   } else {
     var up = Math.max(0, Math.min(1, (-t[0] - 2) / 35));
     c.fillStyle = "#2c353e"; c.fillRect(W / 2 - 40, 20, 80, H - 40);

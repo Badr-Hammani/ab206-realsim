@@ -20,6 +20,9 @@ func _init():
 	ps.calibrated.connect(func(_r): ctl.phone_release())
 	if "--hover" in OS.get_cmdline_user_args():
 		ctl.set_from_trim(0.15, -0.05, 0.5, 0.0, 1.0)   # sim already flying: phones must not wait for a match
+	for a in OS.get_cmdline_user_args():
+		if a == "--rock":
+			ps.ped_mode = 1
 	var ok = ps.start()
 	print("START ", ok, " err='", ps.error_text, "' addrs=", ps.addresses, " url=", ps.url(true))
 func _process(dt):
@@ -27,13 +30,14 @@ func _process(dt):
 	ctl.update(dt)
 	ps.role_status["cyclic"] = "%d,test" % (1 if ctl.phone_cyc_engaged else 0)
 	ps.role_status["collective"] = "%d,test" % (1 if ctl.phone_coll_engaged else 0)
+	ps.role_status["pedals"] = "%d,test" % (1 if ctl.phone_ped_engaged else 0)
 	if t >= next_print:
 		next_print += 0.5
 		var s = "T %.1f" % t
 		for r in ps.roles:
 			var tl = ps.tilt_deg(r)
 			s += " | %s rate %.0f tilt %+.1f %+.1f" % [r, ps.roles[r]["rate"], tl.x, tl.y]
-		s += " | ctl lon %+.2f lat %+.2f coll %.2f thr %.2f eng %s/%s" % [ctl.cyclic_lon, ctl.cyclic_lat, ctl.collective, ctl.throttle, ctl.phone_cyc_engaged, ctl.phone_coll_engaged]
+		s += " | ctl lon %+.2f lat %+.2f coll %.2f thr %.2f ped %+.2f eng %s/%s/%s" % [ctl.cyclic_lon, ctl.cyclic_lat, ctl.collective, ctl.throttle, ctl.pedal, ctl.phone_cyc_engaged, ctl.phone_coll_engaged, ctl.phone_ped_engaged]
 		print(s)
 	if t > dur:
 		ps.stop()
