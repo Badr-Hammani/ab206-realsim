@@ -2,7 +2,12 @@ extends CanvasLayer
 ## Joystick / HOTAS setup (F8): live raw axes, assign an axis to each flight control
 ## by moving it, invert, dead zone, and range calibration (min/max recorded live).
 
+const G = preload("res://scripts/ui/glass.gd")
+
+signal closed      # "Done" pressed (main.gd un-pauses)
+
 var controls
+var ui_theme: Theme      # the pause menu's theme (set by main.gd)
 var root: PanelContainer
 var box: VBoxContainer
 var raw_view: Control
@@ -14,28 +19,29 @@ var _info: Label
 func _ready() -> void:
 	layer = 21
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(G.backdrop())
 	root = PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.06, 0.07, 0.95)
-	sb.set_corner_radius_all(8)
-	sb.content_margin_left = 16
-	sb.content_margin_right = 16
-	sb.content_margin_top = 12
-	sb.content_margin_bottom = 12
-	root.add_theme_stylebox_override("panel", sb)
-	root.anchor_left = 0.5
-	root.anchor_right = 0.5
-	root.anchor_top = 0.5
-	root.anchor_bottom = 0.5
-	root.offset_left = -420
-	root.offset_right = 420
-	root.offset_top = -320
-	root.offset_bottom = 320
+	if ui_theme:
+		root.theme = ui_theme
+	root.add_theme_stylebox_override("panel", G.card())
 	add_child(root)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
 	box = VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
-	root.add_child(box)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 12)
+	scroll.add_child(box)
 	visible = false
+	get_viewport().size_changed.connect(_layout)
+	_layout()
+
+func _layout() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var w := minf(980.0, vp.x - 40.0)
+	var h := minf(720.0, vp.y - 40.0)
+	root.position = (vp - Vector2(w, h)) * 0.5
+	root.size = Vector2(w, h)
 
 func open() -> void:
 	visible = true
@@ -50,12 +56,27 @@ func close() -> void:
 func _rebuild() -> void:
 	for c in box.get_children():
 		c.queue_free()
-	var t := Label.new()
-	t.text = "JOYSTICK SETUP  (F8 or Esc to close - settings are saved)"
-	t.add_theme_font_size_override("font_size", 17)
-	box.add_child(t)
+	var head := HBoxContainer.new()
+	var tv := VBoxContainer.new()
+	tv.add_theme_constant_override("separation", 0)
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tv.add_child(G.label("AB206 REALSIM  ·  SETUP", 12, G.TEXT3))
+	tv.add_child(G.label("Joystick / HOTAS", 30, G.TEXT))
+	tv.add_child(G.label("Assign an axis to each control by moving it. Settings are saved.", 13, G.TEXT2))
+	head.add_child(tv)
+	var done := Button.new()
+	done.text = "Done"
+	done.custom_minimum_size = Vector2(120, 44)
+	done.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	done.add_theme_stylebox_override("normal", G.box(G.ACCENT, 22, 0.0, 9))
+	done.add_theme_stylebox_override("hover", G.box(G.ACCENT.lightened(0.12), 22, 0.0, 9))
+	done.pressed.connect(func() -> void:
+		close()
+		closed.emit())
+	head.add_child(done)
+	box.add_child(head)
 	var pads := Input.get_connected_joypads()
-	var dl := Label.new()
+	var dl := G.label("", 13, G.TEXT2, true)
 	if pads.is_empty():
 		dl.text = "No joystick detected. Plug it in - it appears here automatically."
 	else:
@@ -64,25 +85,38 @@ func _rebuild() -> void:
 			names.append("#%d %s" % [d, Input.get_joy_name(d)])
 		dl.text = "Devices: " + ", ".join(names)
 	box.add_child(dl)
+	var rv_wrap := PanelContainer.new()
+	rv_wrap.add_theme_stylebox_override("panel", G.section())
 	raw_view = Control.new()
-	raw_view.custom_minimum_size = Vector2(800, 120)
+	raw_view.custom_minimum_size = Vector2(0, maxf(56.0 * pads.size(), 30.0) + 36.0)
 	raw_view.draw.connect(_draw_raw)
-	box.add_child(raw_view)
+	rv_wrap.add_child(raw_view)
+	box.add_child(G.label("LIVE AXES", 12, G.TEXT3))
+	box.add_child(rv_wrap)
+	box.add_child(G.label("CONTROLS", 12, G.TEXT3))
+	var fwrap := PanelContainer.new()
+	fwrap.add_theme_stylebox_override("panel", G.section())
+	var fbox := VBoxContainer.new()
+	fbox.add_theme_constant_override("separation", 8)
+	fwrap.add_child(fbox)
+	box.add_child(fwrap)
 	for fn in controls.FUNCS:
 		var h := HBoxContainer.new()
-		var l := Label.new()
-		l.text = fn.capitalize()
+		h.add_theme_constant_override("separation", 8)
+		var l := G.label(fn.capitalize(), 15, G.TEXT)
 		l.custom_minimum_size = Vector2(110, 0)
 		h.add_child(l)
-		var bl := Label.new()
-		bl.custom_minimum_size = Vector2(240, 0)
+		var bl := G.label("", 13, G.TEXT2)
+		bl.custom_minimum_size = Vector2(250, 0)
+		bl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if controls.bindings.has(fn):
 			var b: Dictionary = controls.bindings[fn]
 			bl.text = "dev %d axis %d  range %.2f..%.2f%s" % [b["device"], b["axis"], b.get("min", -1.0), b.get("max", 1.0), "  INV" if b.get("invert", false) else ""]
 		else:
 			bl.text = "keyboard / mouse"
 		if _assigning == fn:
-			bl.text = ">>> move the axis now <<<"
+			bl.text = "Move the axis now..."
+			bl.add_theme_color_override("font_color", G.ACCENT)
 		h.add_child(bl)
 		var ba := Button.new()
 		ba.text = "Assign"
@@ -106,7 +140,8 @@ func _rebuild() -> void:
 		dz.min_value = 0.0
 		dz.max_value = 0.2
 		dz.step = 0.01
-		dz.custom_minimum_size = Vector2(110, 20)
+		dz.custom_minimum_size = Vector2(110, 24)
+		dz.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		dz.value = controls.bindings[fn].get("deadzone", 0.03) if controls.bindings.has(fn) else 0.03
 		dz.editable = controls.bindings.has(fn)
 		dz.tooltip_text = "Dead zone"
@@ -114,16 +149,15 @@ func _rebuild() -> void:
 			if controls.bindings.has(fn):
 				controls.bindings[fn]["deadzone"] = v)
 		h.add_child(dz)
-		box.add_child(h)
+		fbox.add_child(h)
 	var cal := Button.new()
 	cal.text = "STOP calibration (save ranges)" if _calibrating else "Calibrate ranges: press, move every assigned axis to both limits, press again"
 	cal.pressed.connect(_toggle_cal)
 	box.add_child(cal)
-	_info = Label.new()
-	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_info.custom_minimum_size = Vector2(800, 0)
-	_info.text = "Collective and throttle use the full axis range (0..1). Cyclic and pedals are centred with a dead zone. If a direction is backwards, press Invert."
+	_info = G.label("", 12, G.TEXT3, true)
+	_info.text = "Collective and throttle use the full axis range (0..1). Cyclic and pedals are centred with a dead zone (slider on each row). If a direction is backwards, press Invert."
 	box.add_child(_info)
+	box.add_child(G.label("F8 or Esc  close", 11, G.TEXT3))
 
 func _start_assign(fn: String) -> void:
 	_assigning = fn
@@ -165,29 +199,25 @@ func _process(_dt: float) -> void:
 			b["max"] = maxf(float(b["max"]), raw)
 
 func _draw_raw() -> void:
-	var font := ThemeDB.fallback_font
+	var font: Font = ui_theme.default_font if ui_theme and ui_theme.default_font else ThemeDB.fallback_font
+	var cw := raw_view.size.x / 4.0
 	var y := 0.0
 	for d in Input.get_connected_joypads():
 		for a in 8:
 			var val := Input.get_joy_axis(d, a)
-			var x := (a % 4) * 200.0
+			var x := (a % 4) * cw
 			var yy := y + int(a / 4) * 26.0
-			raw_view.draw_rect(Rect2(Vector2(x + 70, yy + 4), Vector2(120, 12)), Color(0.2, 0.2, 0.2))
-			raw_view.draw_rect(Rect2(Vector2(x + 130 + minf(val, 0.0) * 60.0, yy + 4), Vector2(absf(val) * 60.0, 12)), Color(0.3, 0.8, 1.0))
-			raw_view.draw_string(font, Vector2(x, yy + 15), "d%d ax%d" % [d, a], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)
+			raw_view.draw_string(font, Vector2(x, yy + 15), "d%d ax%d" % [d, a], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, G.TEXT2)
+			G.meter(raw_view, Rect2(Vector2(x + 62, yy + 6), Vector2(cw - 80, 10)), val, true)
 		y += 56.0
 	if Input.get_connected_joypads().is_empty():
-		raw_view.draw_string(font, Vector2(0, 20), "(no devices)", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 0.7, 0.7))
+		raw_view.draw_string(font, Vector2(0, 20), "No device", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, G.TEXT3)
 	# mapped outputs
 	var c = controls
 	var outs := [["Cyc lat", c.cyclic_lat, true], ["Cyc lon", c.cyclic_lon, true], ["Coll", c.collective, false], ["Pedal", c.pedal, true], ["Thr", c.throttle, false]]
+	var ow := raw_view.size.x / outs.size()
 	for i in outs.size():
-		var x := i * 160.0
-		var yy := 100.0
-		var val: float = outs[i][1]
-		raw_view.draw_string(font, Vector2(x, yy + 12), outs[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 0.8, 0.4))
-		raw_view.draw_rect(Rect2(Vector2(x + 55, yy + 2), Vector2(90, 12)), Color(0.2, 0.2, 0.2))
-		if outs[i][2]:
-			raw_view.draw_rect(Rect2(Vector2(x + 100 + minf(val, 0.0) * 45.0, yy + 2), Vector2(absf(val) * 45.0, 12)), Color(1.0, 0.7, 0.2))
-		else:
-			raw_view.draw_rect(Rect2(Vector2(x + 55, yy + 2), Vector2(val * 90.0, 12)), Color(1.0, 0.7, 0.2))
+		var x := i * ow
+		var yy := maxf(y, 30.0) + 10.0
+		raw_view.draw_string(font, Vector2(x, yy + 14), outs[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, G.TEXT)
+		G.meter(raw_view, Rect2(Vector2(x + 58, yy + 5), Vector2(ow - 72, 10)), float(outs[i][1]), outs[i][2])

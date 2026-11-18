@@ -243,3 +243,15 @@ the same beginner with assist 3 finishes on the first attempt (93). Not yet flow
 Pause menu rebuilt (scripts/ui/menu.gd): frosted-glass panel over a blurred view of the sim, tabs
 Fly / Lessons / Weather / Settings, grouped cards, segmented controls, iOS-style switches and sliders.
 Same settings and actions as before. Screenshots of all four tabs checked by eye (1600x900). Training suite 101/101, flight model 41/41.
+
+## 2026-11-18 milestone 2.12 (all screens in the new style + phone auto-reconnect)
+
+Phone controller (F10), joystick setup (F8), F1 help, instructor/lesson message boxes and the hover guide now
+use the same glass style as the pause menu (shared scripts/ui/glass.gd). F1 help no longer says "Milestone 2.5".
+F10 text updated to the instant take-over from 2.11, and it now shows "signal lost N s ago - waiting for the
+phone to reconnect" and a drop counter instead of just "not connected".
+Phone page: watchdog - the PC sends a status line 5x per second; if nothing arrives for 1.5 s (or the page comes
+back from the lock screen / another app) the phone drops the dead socket and reconnects at once. Test: Playwright
+(Pixel 7 emulation) as cyclic, PC side frozen for 4 s with SIGSTOP: phone showed "Reconnecting...", then
+"IN CONTROL" again ~1 s after the PC resumed ("reconnected 1x"). Not yet tested on a real iPhone hotspot.
+Training suite 101/101, flight model 41/41. Screenshots (1600x900) of F10, F8, F1, lesson HUD checked by eye.

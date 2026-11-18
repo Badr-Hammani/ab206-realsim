@@ -137,21 +137,41 @@ function postLoop() {
     .then(function () { postBusy = false; setTimeout(postLoop, 0); });
 }
 
+var lastRx = 0, reconnects = 0, wsBorn = 0;
 function connectWs() {
   var url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
   var opened = false;
-  try { ws = new WebSocket(url); } catch (e) { ws = null; }
-  if (!ws) { usePost = true; postLoop(); return; }
+  var me;
+  try { me = new WebSocket(url); } catch (e) { me = null; }
+  ws = me;
+  if (!me) { usePost = true; postLoop(); return; }
+  wsBorn = performance.now();
   var to = setTimeout(function () {
-    if (!opened) { try { ws.close(); } catch (e) {} ws = null; usePost = true; postLoop(); }
+    if (!opened && ws === me) { dropWs(); if (everOpened) { setTimeout(connectWs, 300); } else { usePost = true; postLoop(); } }
   }, 2500);
-  ws.onopen = function () { opened = true; clearTimeout(to); connected = true; ws.send("h," + role); };
-  ws.onmessage = function (m) { String(m.data).split("\n").forEach(handle); };
-  ws.onclose = function () {
-    connected = false;
-    if (opened && running && !usePost) setTimeout(connectWs, 1000);
-    else if (!opened && running && !usePost) { clearTimeout(to); usePost = true; postLoop(); }
+  me.onopen = function () { if (ws !== me) return; opened = true; everOpened = true; clearTimeout(to); connected = true; lastRx = performance.now(); me.send("h," + role); };
+  me.onmessage = function (m) { if (ws !== me) return; lastRx = performance.now(); String(m.data).split("\n").forEach(handle); };
+  me.onclose = function () {
+    if (ws !== me) return;      // an old socket we already replaced
+    connected = false; ws = null; clearTimeout(to);
+    if ((opened || everOpened) && running && !usePost) { reconnects++; setTimeout(connectWs, 300); }
+    else if (running && !usePost) { usePost = true; postLoop(); }
   };
+}
+var everOpened = false;
+// forget a socket without waiting for the browser to notice it is dead
+function dropWs() {
+  var old = ws; ws = null; connected = false;
+  if (old) { old.onopen = old.onmessage = old.onclose = old.onerror = null; try { old.close(); } catch (e) {} }
+}
+// Watchdog: the PC sends a status line 5 times a second. If nothing arrives for 1.5 s, or the
+// send buffer is stuck, the connection is dead even if the browser still says "open" (common
+// after Wi-Fi/hotspot hiccups or the screen turning off): open a fresh one at once.
+function watchdog() {
+  if (!running || usePost) return;
+  var now = performance.now();
+  if (ws && ws.readyState === 1 && now - lastRx > 1500) { reconnects++; dropWs(); connectWs(); }
+  else if (!ws && everOpened) { connectWs(); }
 }
 
 function handle(t) {
@@ -172,7 +192,13 @@ function calibrate() {
 async function lockScreen() {
   try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
 }
-document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && running) lockScreen(); });
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible" && running) {
+    lockScreen();
+    // back from the lock screen / another app: the old socket is usually dead - reconnect now
+    if (!usePost && (!ws || ws.readyState !== 1 || performance.now() - lastRx > 700)) { reconnects++; dropWs(); connectWs(); }
+  }
+});
 
 async function start() {
   try {
@@ -188,6 +214,7 @@ async function start() {
   connectWs();
   setInterval(function () { if (have && performance.now() - lastSend > 50) send(); }, 50);   // heartbeat when the phone is still
   setInterval(function () { if (ws && ws.readyState === 1) ws.send("p," + role + "," + performance.now().toFixed(1)); }, 1000);
+  setInterval(watchdog, 250);
   requestAnimationFrame(draw);
   lockScreen();
   // full screen + orientation lock so an auto-rotate cannot flip the axes mid-flight (best effort)
@@ -233,11 +260,11 @@ function draw() {
   }
   var en = document.getElementById("engage");
   if (!have) { en.textContent = permNote || (window.isSecureContext ? "No motion data yet - move the phone" : "No motion data: open the https:// address instead"); en.style.background = "#3a1f1c"; }
-  else if (!connected) { en.textContent = "Not connected to the simulator"; en.style.background = "#3a1f1c"; }
+  else if (!connected) { en.textContent = running ? "Reconnecting to the simulator..." : "Not connected to the simulator"; en.style.background = "#3a1f1c"; }
   else if (engaged === "1") { en.textContent = "IN CONTROL"; en.style.background = "#1d3a24"; }
   else if (engaged === "0") { en.textContent = "Instructor has the " + role + " - it comes back to you automatically"; en.style.background = "#3a311c"; }
   else { en.textContent = "Connected"; en.style.background = "#1d3a24"; }
-  var lat = rtt >= 0 ? " " + Math.round(rtt) + " ms round trip" : "";
+  var lat = (rtt >= 0 ? " " + Math.round(rtt) + " ms round trip" : "") + (reconnects > 0 ? " · reconnected " + reconnects + "x" : "");
   var cls = rtt > 80 ? "warn" : "ok";
   document.getElementById("link").innerHTML = connected ? '<span class="' + (usePost ? "warn" : cls) + '">' + (usePost ? "HTTP (slower)" : "WebSocket") + lat + "</span>" : '<span class="bad">offline</span>';
   document.getElementById("rate").textContent = have ? rate.toFixed(0) + " Hz" : (running ? "waiting..." : "-");

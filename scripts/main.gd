@@ -120,7 +120,9 @@ func _ready() -> void:
 	menu.action.connect(_on_menu_action)
 	joy = JoyPanel.new()
 	joy.controls = controls
+	joy.ui_theme = menu._theme
 	add_child(joy)
+	joy.closed.connect(func() -> void: _set_paused(menu.visible))
 	touch = TouchControls.new()
 	touch.main = self
 	touch.controls = controls
@@ -137,7 +139,9 @@ func _ready() -> void:
 	phone_panel = PhonePanel.new()
 	phone_panel.phone = phone
 	phone_panel.controls = controls
+	phone_panel.ui_theme = menu._theme
 	add_child(phone_panel)
+	phone_panel.closed.connect(func() -> void: _set_paused(menu.visible))
 	if phone.autostart:
 		phone.start()
 

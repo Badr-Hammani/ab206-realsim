@@ -2,31 +2,32 @@ extends CanvasLayer
 ## Heads-up display: telemetry overlay (F6), control positions, instructor messages,
 ## status line, help (F1) and the 2D copy of the instrument panel (Tab).
 
-const HELP := """AB206 REALSIM  -  Bell 206B-3  -  Milestone 2.5   (educational simulation, not a training device)
+const G = preload("res://scripts/ui/glass.gd")
 
-FLIGHT CONTROLS (keyboard + mouse)
-  Mouse ............ CYCLIC (stick stays where you leave it)    X: centre cyclic    M: mouse cyclic on/off
-  Arrow keys ....... cyclic nudges (spring back)
-  W / S  or Wheel .. COLLECTIVE up / down  (hold Shift = faster).  Lever stays where you leave it.
-  A / D ............ PEDALS left / right (spring back to pedal trim)      Q / E: move pedal trim
-  R / F ............ THROTTLE twist grip open / close (full open = governor holds 100% N2)
-  H ................ training assist: off / 1 damping / 2 attitude hold / 3 hover hold (NOT on the real aircraft)
-  Y ................ training speed 100 / 75 / 50 %  (slow motion to learn the hover)
-
-VIEW AND SIM
-  V ............ cockpit / chase / free camera        Right mouse (hold): look around     C: recentre view
-  I J K L U O .. move free camera                     Tab: 2D instrument panel on/off
-  P ............ pause                                Esc: menu (weight, wind, weather, graphics, joystick)
-  F2 ........... reset on main helipad                F3: hover 5 m      F4: cruise 80 kt
-  F5 ........... autorotation practice (engine to idle at 2,500 ft AGL)
-  F6 ........... telemetry overlay                    F7: graphics preset Low / Medium / High
-  F8 ........... joystick setup and calibration       F9: instructor messages on/off      F11: fullscreen
-  F10 .......... PHONE CONTROLLER (tilt a phone = cyclic / collective)   N: set phone neutral
-  Esc > Lessons  training levels H1-H6 hover, L1-L4 take-off/landing, E1-E3 other    T: take all controls
-  G ............ hover guide circle on/off            B: outside sight gates on/off (look out!)
-
-FIRST FLIGHT: on the pad, raise collective (W) slowly until the skids get light, hold left pedal (A or Q trim)
-against the torque, keep the cyclic centred, and lift into a 1 m hover. Small, early corrections!"""
+## F1 help: [key, what it does] rows, grouped.
+const HELP_GROUPS := [
+	["Flight controls (keyboard + mouse)", [
+		["Mouse", "Cyclic - stays where you leave it.   X centre   M mouse cyclic on/off"],
+		["Arrow keys", "Cyclic nudges (spring back)"],
+		["W / S, wheel", "Collective up / down (Shift = faster) - lever stays where you leave it"],
+		["A / D", "Pedals (spring back to trim)   Q / E move pedal trim"],
+		["R / F", "Throttle open / close (full open = governor holds 100% N2)"],
+		["H", "Training assist: off / damping / attitude hold / hover hold (not on the real aircraft)"],
+		["Y", "Training speed 100 / 75 / 50 %"],
+	]],
+	["View and sim", [
+		["V", "Cockpit / chase / free camera   right mouse = look around   C recentre"],
+		["Tab", "2D instrument panel     I J K L U O move free camera"],
+		["Esc", "Menu: lessons, aircraft, weather, settings     P pause"],
+		["F2  F3  F4  F5", "Reset on pad / hover 5 m / cruise 80 kt / autorotation at 2,500 ft"],
+		["F6  F7", "Telemetry overlay / graphics preset"],
+		["F8", "Joystick setup"],
+		["F10   N", "Phone controller (tilt a phone = cyclic / collective)   N set phone neutral"],
+		["F9  F11  F12", "Instructor messages / fullscreen / screenshot"],
+		["G   B   T", "Hover guide / outside sight gates / take all controls"],
+	]],
+]
+const FIRST_FLIGHT := "First flight: on the pad, raise the collective (W) slowly until the skids get light, hold left pedal (A or Q trim) against the torque, keep the cyclic centred, and lift into a 1 m hover. Small, early corrections."
 
 var telemetry: Label
 var status: Label
@@ -54,13 +55,9 @@ func _label(parent: Node, size := 14, color := Color.WHITE) -> Label:
 	return l
 
 func _panel_style(alpha := 0.6) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.03, 0.04, 0.05, alpha)
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 12
-	sb.content_margin_right = 12
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
+	var sb := G.box(Color(0.09, 0.11, 0.15, alpha), 14, 0.14, 12)
+	sb.content_margin_top = 9
+	sb.content_margin_bottom = 9
 	return sb
 
 func build(panel_scene_script: Script) -> void:
@@ -106,17 +103,42 @@ func build(panel_scene_script: Script) -> void:
 	lesson_label.custom_minimum_size = Vector2(430, 0)
 	lesson_panel.visible = false
 	help = PanelContainer.new()
-	help.add_theme_stylebox_override("panel", _panel_style(0.85))
+	var hsb := G.card()
+	hsb.bg_color = Color(0.08, 0.10, 0.13, 0.93)
+	help.add_theme_stylebox_override("panel", hsb)
 	help.anchor_left = 0.5
 	help.anchor_top = 0.5
 	help.anchor_right = 0.5
 	help.anchor_bottom = 0.5
-	help.offset_left = -520
-	help.offset_top = -250
-	help.offset_right = 520
-	help.offset_bottom = 250
-	var hl := _label(help, 14)
-	hl.text = HELP
+	help.offset_left = -500
+	help.offset_top = -330
+	help.offset_right = 500
+	help.offset_bottom = 330
+	help.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	help.grow_vertical = Control.GROW_DIRECTION_BOTH
+	var hv := VBoxContainer.new()
+	hv.add_theme_constant_override("separation", 8)
+	help.add_child(hv)
+	hv.add_child(G.label("AB206 REALSIM  ·  BELL 206B-3  ·  educational simulation, not a training device", 12, G.TEXT3))
+	hv.add_child(G.label("Keys and controls", 28, G.TEXT))
+	hv.add_child(Control.new())
+	for grp in HELP_GROUPS:
+		hv.add_child(G.label(String(grp[0]).to_upper(), 12, G.TEXT3))
+		var sec := PanelContainer.new()
+		sec.add_theme_stylebox_override("panel", G.box(Color(1, 1, 1, 0.06), 14, 0.07, 10))
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 18)
+		grid.add_theme_constant_override("v_separation", 4)
+		sec.add_child(grid)
+		for row in grp[1]:
+			var k := G.label(row[0], 14, G.ACCENT.lightened(0.25))
+			k.custom_minimum_size = Vector2(150, 0)
+			grid.add_child(k)
+			grid.add_child(G.label(row[1], 14, G.TEXT))
+		hv.add_child(sec)
+	hv.add_child(G.label(FIRST_FLIGHT, 13, G.TEXT2, true))
+	hv.add_child(G.label("F1  close", 11, G.TEXT3))
 	add_child(help)
 	help.visible = false
 	# 2D instrument panel (bottom centre), scaled to fit
@@ -223,7 +245,7 @@ func _draw_guide(c: Control) -> void:
 	if g.is_empty():
 		return
 	var font := ThemeDB.fallback_font
-	c.draw_rect(Rect2(Vector2(-6, -6), Vector2(300, 272)), Color(0.03, 0.04, 0.05, 0.45))
+	c.draw_style_box(G.box(Color(0.09, 0.11, 0.15, 0.55), 14, 0.14, 0), Rect2(Vector2(-6, -6), Vector2(300, 272)))
 	var ctr := Vector2(110, 115)
 	var R := 100.0
 	var px_m := R / 4.0                       # 4 m to the edge

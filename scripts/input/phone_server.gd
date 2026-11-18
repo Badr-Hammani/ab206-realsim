@@ -56,6 +56,8 @@ var smoothing_ms := 0.0          # extra low-pass (ms); 0 = none, the phone alre
 
 # ------------------------------------------------------------------- state
 var roles := {}                   # role -> Dictionary (see _role_state)
+var lost_at := {}                 # role -> time it was lost (for "reconnecting..." in the F10 panel)
+var drops := {}                   # role -> number of times it dropped this session
 var _srv_tls: TCPServer
 var _srv_plain: TCPServer
 var _tls_opts: TLSOptions
@@ -118,6 +120,7 @@ func stop() -> void:
 	for r in roles.keys():
 		role_lost.emit(r)
 	roles.clear()
+	lost_at.clear()
 
 func _make_tls() -> TLSOptions:
 	var crypto := Crypto.new()
@@ -176,6 +179,8 @@ func _process(dt: float) -> void:
 	for r in roles.keys():
 		if now - float(roles[r]["t"]) > ROLE_TIMEOUT:
 			roles.erase(r)
+			lost_at[r] = now
+			drops[r] = int(drops.get(r, 0)) + 1
 			role_lost.emit(r)
 	_status_timer -= dt
 	if _status_timer <= 0.0:
@@ -435,6 +440,7 @@ func _handle_message(line: String, c) -> String:
 
 func _role_state(role: String) -> Dictionary:
 	if not roles.has(role):
+		lost_at.erase(role)
 		roles[role] = {"pitch": 0.0, "roll": 0.0, "p0": 0.0, "r0": 0.0, "cal": false, "t": _now(),
 			"n": 0, "rate": 0.0, "rate_t": _now(), "f_a": 0.0, "f_b": 0.0, "f_c": 1.0, "first": true}
 		role_connected.emit(role)
