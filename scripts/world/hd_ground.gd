@@ -31,6 +31,7 @@ var _failed := {}                     # key -> retry time
 var _w := [0, 0]
 var credit: Label
 var status := "off"                   # off / loading / live / offline / outside
+var _last_report := 0
 var _offline_at := -1                 # when it gave up; tries again a minute later (signal may return)
 
 func setup(region: Dictionary) -> bool:
@@ -219,6 +220,9 @@ func _process(_d: float) -> void:
 	if st != status:
 		print("HD ground: %s -> %s (%d ok, %d failed)" % [status, st, fetch.ok_count, fetch.fail_count])
 	status = st
+	if live / 25 != _last_report:
+		_last_report = live / 25
+		print("HD ground: %d tiles on the ground (%d downloaded, %d failed, %d busy)" % [live, fetch.ok_count, fetch.fail_count, fetch.busy()])
 	credit.visible = live > 0
 
 func _place(key: String, img: Image) -> bool:
