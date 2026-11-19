@@ -99,3 +99,19 @@ Licence: Esri's basemaps may be used free for personal, non-commercial use with 
 shown on the map ("HD imagery © Esri, Maxar, Earthstar Geographics"). Bulk downloading or storing
 the tiles offline is not allowed, which is why they are streamed. Selling the simulator would need
 an ArcGIS Location Platform account (API key) or another licensed imagery source.
+
+## M2.21: wide 3D terrain, live HD ground photo, Ultra preset
+
+- **Wide 3D terrain** (`scripts/world/outer_terrain.gd`): the whole 98 x 98 km region in 3D, from the
+  Copernicus GLO-30 DEM (30 m surface model) resampled to 32 m (`region_height_png.bin`, built by
+  `tools/maps/build_region_dem.py`). It shows the open-cast phosphate mine pits east of Khouribga
+  (e.g. 15.5 km E / 10.9 km S, about 35 m deep), the plateau edge to the north and the hills
+  around Oued Zem. The DEM resolution is the limit: features smaller than about 30 m (single
+  buildings, narrow trenches, mine walls) are not in it. No finer open DEM covers this area.
+- **Live HD ground photo** (`scripts/world/hd_ground.gd`): Esri World Imagery tiles streamed while you fly
+  (zoom 17, about 1 m per pixel, within ~1.5 km; zoom 15, about 4 m per pixel, within ~4 km on Ultra).
+  Needs internet and is not stored. Without it, the Sentinel-2 photos (10 m core, 16-32 m region) are used.
+  Settings: Graphics and sound > "Live HD ground photo".
+- **Buildings**: open data still has no building footprints for Khouribga town (Overture 2026-11-18:
+  only ~130 OSM buildings). The other houses are **estimated** from ESA WorldCover built-up cells.
+  Their positions are not real, and the HD photo underneath shows the real roofs.
