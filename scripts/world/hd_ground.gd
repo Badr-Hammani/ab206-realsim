@@ -75,6 +75,8 @@ func add_material(m: ShaderMaterial) -> void:
 ## Graphics preset 0-3 -> window sizes. Low switches HD ground off.
 func set_profile(preset: int) -> void:
 	var p: Array = PROFILE[clampi(preset, 0, PROFILE.size() - 1)]
+	if OS.has_feature("web") and preset >= 3:
+		p = PROFILE[2]        # phones: Ultra keeps High's tile window (video memory)
 	if p[0] == _w[0] and p[1] == _w[1]:
 		return
 	_w = [int(p[0]), int(p[1])]
@@ -263,7 +265,7 @@ func describe() -> String:
 		"loading":
 			return "loading..."
 		"offline":
-			return "not reachable (offline or blocked) - 10 m satellite photo"
+			return fetch.blocked_text() + " Showing the 10 m satellite photo."
 		"outside":
 			return "outside the HD area"
 	return "off"

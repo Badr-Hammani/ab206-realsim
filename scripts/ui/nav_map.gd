@@ -111,6 +111,7 @@ func set_mode(m: int) -> void:
 		big_centre = heli_xz()
 		draft.clear()
 		_refresh_info()
+		print("Map open: memory %d MB, video %d MB" % [OS.get_static_memory_usage() >> 20, int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) >> 20])
 	elif was_big:
 		draft.clear()
 		_save()
@@ -216,26 +217,46 @@ func _build_small() -> void:
 	small_view.draw.connect(func() -> void: _draw_map(small_view, heli_xz(), small_mpp, false))
 	small_box.add_child(small_view)
 
+## Phones: the 1600 x 900 UI is shown on a ~850 x 390 point screen, so map text and buttons are
+## drawn about twice as big (otherwise the labels are 5 points high and the buttons too small to hit).
+var phone := false
+var ui_k := 1.0
+
 func _btn(parent: Control, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
+	if phone:
+		b.add_theme_font_size_override("font_size", 28)
+		b.custom_minimum_size = Vector2(0, 64)
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b
 
 func _build_big() -> void:
+	phone = DisplayServer.is_touchscreen_available() and (OS.has_feature("web_android") or OS.has_feature("web_ios") or OS.has_feature("mobile"))
+	for a in OS.get_cmdline_user_args():
+		if a == "--phone-ui":
+			phone = true
+	ui_k = 2.0 if phone else 1.0
 	big_root = PanelContainer.new()
 	big_root.add_theme_stylebox_override("panel", _style(0.92))
 	add_child(big_root)
 	var vb := VBoxContainer.new()
 	big_root.add_child(vb)
-	var bar := HBoxContainer.new()
+	var bar: Container = HFlowContainer.new() if phone else HBoxContainer.new()
 	vb.add_child(bar)
 	var title := Label.new()
 	title.text = "  KHOURIBGA MAP   "
 	title.add_theme_font_size_override("font_size", 16)
-	bar.add_child(title)
+	if not phone:
+		bar.add_child(title)
+	if phone:
+		# phone bar: the buttons you need with a finger first (pinch zooms, drag moves, tap pins)
+		_btn(bar, "Close", func() -> void: set_mode(Mode.OFF))
+		_btn(bar, "  +  ", func() -> void: _zoom_at(big_view.size * 0.5, 0.5))
+		_btn(bar, "  -  ", func() -> void: _zoom_at(big_view.size * 0.5, 2.0))
+		_btn(bar, "Centre", func() -> void: follow = true)
 	tool_buttons["pin"] = _btn(bar, "Pin point", func() -> void: _set_tool("pin"))
 	tool_buttons["zone"] = _btn(bar, "Draw zone", func() -> void: _set_tool("zone"))
 	for i in ZONE_COLORS.size():
@@ -247,11 +268,13 @@ func _build_big() -> void:
 		if draft.size() > 0:
 			draft.remove_at(draft.size() - 1))
 	hd_button = _btn(bar, "HD photo: ON", _toggle_hd)
-	_btn(bar, "Zoom +", func() -> void: _zoom_at(big_view.size * 0.5, 0.67))
-	_btn(bar, "Zoom -", func() -> void: _zoom_at(big_view.size * 0.5, 1.5))
-	_btn(bar, "Centre on helicopter", func() -> void: follow = true)
+	if not phone:
+		_btn(bar, "Zoom +", func() -> void: _zoom_at(big_view.size * 0.5, 0.67))
+		_btn(bar, "Zoom -", func() -> void: _zoom_at(big_view.size * 0.5, 1.5))
+		_btn(bar, "Centre on helicopter", func() -> void: follow = true)
 	_btn(bar, "Clear target", func() -> void: target = -1; _save(); _refresh_info())
-	_btn(bar, "Close (K / Esc)", func() -> void: set_mode(Mode.OFF))
+	if not phone:
+		_btn(bar, "Close (K / Esc)", func() -> void: set_mode(Mode.OFF))
 	var hb := HBoxContainer.new()
 	hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vb.add_child(hb)
@@ -266,6 +289,7 @@ func _build_big() -> void:
 	hb.add_child(big_view)
 	var side := VBoxContainer.new()
 	side.custom_minimum_size = Vector2(300, 0)
+	side.visible = not phone        # phones: the whole width is map (pins list is in the info text)
 	hb.add_child(side)
 	info_label = Label.new()
 	info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -407,7 +431,9 @@ func _big_input(ev: InputEvent) -> void:
 
 func _zoom_at(screen: Vector2, f: float) -> void:
 	var before := _to_world(big_view, big_centre, big_mpp, screen)
-	big_mpp = clampf(big_mpp * f, 0.25, 80.0)
+	# without the HD photo, zooming closer than 1.5 m per pixel only magnifies blur
+	var lo := 0.25 if hd != null and hd.ok_count > 0 and hd.enabled else 1.5
+	big_mpp = clampf(big_mpp * f, lo, 80.0)
 	var after := _to_world(big_view, big_centre, big_mpp, screen)
 	big_centre += before - after
 	if f < 1.0:
@@ -510,7 +536,13 @@ var _placed: Array[Rect2] = []
 
 func _label(v: Control, at: Vector2, text: String, size: int, col: Color, force := false) -> bool:
 	var font := ThemeDB.fallback_font
+	if v == big_view and ui_k != 1.0:
+		size = int(size * ui_k)
+		if at.y < 80.0:
+			at.y = at.y * ui_k
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	if v == big_view and ui_k != 1.0 and at.x + w > v.size.x - 6.0:
+		at.x = maxf(6.0, v.size.x - w - 10.0)
 	var r := Rect2(at + Vector2(-2, -size), Vector2(w + 4, size + 4))
 	if not force:
 		if not Rect2(Vector2.ZERO, v.size).encloses(r):
@@ -687,7 +719,9 @@ func _draw_map(v: Control, c: Vector2, mpp: float, big: bool) -> void:
 	if hd_on:
 		_label(v, Vector2(v.size.x - font.get_string_size(hd.CREDIT, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x - 10, 52 if big else 50), hd.CREDIT, 11, Color(1, 1, 1, 0.9), true)
 	elif big and hd != null and hd.enabled and hd.offline() and mpp < hd.START_MPP:
-		_label(v, Vector2(10, 52), "HD photo needs internet (not reachable). Click HD photo to retry.", 12, Color(1, 0.8, 0.5), true)
+		_label(v, Vector2(10, 52), hd.fetch.blocked_text() + " Tap HD photo to retry.", 13, Color(1, 0.8, 0.5), true)
+	elif big and hd != null and hd.active() and mpp < hd.START_MPP:
+		_label(v, Vector2(10, 52), "HD photo: loading... (%d loaded)" % hd.ok_count, 13, Color(1, 1, 1, 0.9), true)
 	# cursor readout (big map)
 	if big and Rect2(Vector2.ZERO, v.size).has_point(mouse_pos):
 		var w := _to_world(v, c, mpp, mouse_pos)
@@ -799,6 +833,12 @@ func _load_streets() -> void:
 func set_season(s: String) -> void:
 	var photos: Dictionary = region.get("photos", {})
 	if photos.is_empty():
+		return
+	if OS.has_feature("web"):
+		# phones: share the 3D terrain's 3072 px copy (32 m per pixel; the live HD photo covers close
+		# zoom). A second full 6144 px copy here (about 200 MB, browsers cannot compress it) made
+		# iPhones run out of memory and close the page when the map opened.
+		region_photo = terrain.region_photo(s) if terrain.has_method("region_photo") else null
 		return
 	var f: String = photos.get(s, photos.values()[0])
 	var img := Image.new()

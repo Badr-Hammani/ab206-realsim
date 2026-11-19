@@ -47,7 +47,7 @@ func set_detail(level: int) -> void:
 	material.set_shader_parameter("detail", level)
 
 func set_profile(p: int) -> void:
-	var r: Array = PROFILE[clampi(p, 0, PROFILE.size() - 1)]
+	var r: Array = PROFILE[clampi(p, 0, PROFILE.size() - 1 - (1 if OS.has_feature("web") else 0))]
 	split_dist = r[0]
 	fine_dist = r[1]
 

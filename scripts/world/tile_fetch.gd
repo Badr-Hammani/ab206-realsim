@@ -17,6 +17,8 @@ var _busy := {}            # key -> true (web) or HTTPRequest (desktop)
 var _js_ok := false
 var ok_count := 0
 var fail_count := 0
+var host := ""             # web: the page's host name (HD photos are blocked inside some app pages)
+const PLAY_URL := "badr-hammani.github.io/ab206-realsim"
 
 const JS := """
 (function(){
@@ -45,6 +47,8 @@ func _ready() -> void:
 	if web:
 		JavaScriptBridge.eval(JS, true)
 		_js_ok = JavaScriptBridge.get_interface("ab206hd") != null
+		var h = JavaScriptBridge.eval("location.hostname", true)
+		host = str(h) if h != null else ""
 		print("HD tiles: browser image loader %s" % ("ready" if _js_ok else "NOT available"))
 		return
 	for i in 8:
@@ -53,6 +57,12 @@ func _ready() -> void:
 		add_child(r)
 		r.request_completed.connect(_done.bind(r))
 		_free.append(r)
+
+## What to tell the player when no tile could be loaded.
+func blocked_text() -> String:
+	if web and not host.ends_with("github.io") and not host.begins_with("127.") and host != "localhost":
+		return "HD photo is blocked on this page. For HD, open %s in Safari." % PLAY_URL
+	return "HD photo needs internet (not reachable)."
 
 func busy() -> int:
 	return _busy.size()

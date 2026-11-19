@@ -10,6 +10,7 @@ const URL := "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery
 const CREDIT := "HD imagery © Esri, Maxar, Earthstar Geographics"
 const MAX_REQ := 6
 const MAX_CACHE := 600
+var max_cache := MAX_CACHE
 const Z_MIN := 13
 const Z_MAX := 19
 const START_MPP := 10.0       # HD tiles are used when zoomed in closer than this (metres per screen px)
@@ -35,6 +36,8 @@ func setup(p: Dictionary) -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--hd-url="):
 			url = a.substr(9)        # test server, e.g. http://127.0.0.1:8765/tile.jpg?%d/%d/%d
+	if OS.has_feature("web"):
+		max_cache = 160            # phones: about 55 MB of tiles at most
 	fetch = TileFetch.new()
 	fetch.max_req = MAX_REQ
 	add_child(fetch)
@@ -175,5 +178,5 @@ func _got(key: String, img: Image) -> void:
 	img.generate_mipmaps()
 	cache[key] = ImageTexture.create_from_image(img)
 	order.append(key)
-	while order.size() > MAX_CACHE:
+	while order.size() > max_cache:
 		cache.erase(order.pop_front())

@@ -116,8 +116,14 @@ func _load_region() -> void:
 	OHALF = OCELL * (ON - 1) * 0.5
 
 ## Region photo (the moving map's wide photo) for the outer terrain.
+var _region_tex := {}          # season -> ImageTexture (shared by the outer terrain and the moving map)
+
 func region_photo(s: String) -> ImageTexture:
+	if _region_tex.has(s):
+		return _region_tex[s]
 	var photos: Dictionary = region.get("photos", {})
+	if OS.has_feature("web") and region.has("photos_web"):
+		photos = region["photos_web"]   # phones: 3072 px files (the 6144 px decode alone needs 150 MB)
 	var f: String = photos.get(s, photos.values()[0] if photos.size() > 0 else "")
 	var img := Image.new()
 	if f == "" or img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + f)) != OK:
@@ -127,7 +133,9 @@ func region_photo(s: String) -> ImageTexture:
 	if img.get_width() > 3072:
 		img.resize(3072, 3072, Image.INTERPOLATE_BILINEAR)
 	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	_region_tex.clear()            # keep only the current season in memory
+	_region_tex[s] = ImageTexture.create_from_image(img)
+	return _region_tex[s]
 
 func outer_point(i: int, j: int) -> float:
 	var k := (clampi(j, 0, ON - 1) * ON + clampi(i, 0, ON - 1)) * 2

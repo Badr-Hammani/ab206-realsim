@@ -160,9 +160,10 @@ func _ready() -> void:
 		phone.start()
 
 	if OS.has_feature("web"):
-		# web build: start on Low (Android phones / integrated GPUs); iPhones start on Ultra (the
-		# auto-quality check steps down if the frame rate stays low). A saved choice overrides both.
-		preset = 3 if OS.has_feature("web_ios") else 0
+		# web build: start on Low (Android phones / integrated GPUs); iPhones start on High (Ultra
+		# plus the big map ran an iPhone out of memory and Safari closed the page). A saved choice
+		# overrides both.
+		preset = 2 if OS.has_feature("web_ios") else 0
 	_load_settings()
 	apply_preset(preset)
 	set_visibility(visibility_m)
@@ -822,7 +823,8 @@ func _status_text() -> String:
 func _save_settings() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("graphics", "preset", preset)
-	cf.set_value("graphics", "ultra_offered", true)   # M2.21: older saves on iPhone move up to Ultra once
+	cf.set_value("graphics", "ultra_offered", true)
+	cf.set_value("graphics", "ios_safe", true)        # M2.22: iPhones saved on Ultra move back to High once
 	if world and world.hd_ground:
 		cf.set_value("graphics", "hd_ground", world.hd_ground.enabled)
 	cf.set_value("world", "visibility", visibility_m)
@@ -850,8 +852,8 @@ func _load_settings() -> void:
 	if cf.load(SETTINGS_PATH) != OK:
 		return
 	preset = cf.get_value("graphics", "preset", 1)
-	if OS.has_feature("web_ios") and not cf.has_section_key("graphics", "ultra_offered"):
-		preset = 3
+	if OS.has_feature("web_ios") and not cf.has_section_key("graphics", "ios_safe"):
+		preset = mini(preset, 2) if cf.has_section_key("graphics", "ultra_offered") else 2
 	if world and world.hd_ground:
 		world.hd_ground.set_enabled(cf.get_value("graphics", "hd_ground", true))
 	visibility_m = cf.get_value("world", "visibility", 12000.0)
