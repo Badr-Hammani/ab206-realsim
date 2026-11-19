@@ -59,3 +59,17 @@ data from public AWS / ESA buckets (no account needed).
 
 Attribution: contains modified Copernicus Sentinel data 2025 and Copernicus DEM (ESA);
 ESA WorldCover 2021 (CC BY 4.0); © OpenStreetMap contributors (ODbL) via Overture Maps.
+
+## Moving map, pins and zones (Khouribga)
+
+- **Z** cycles: small map (bottom-left corner, north up) → big map (the sim pauses, mouse is free) → off.
+  **+ / -** zoom the small map. **Shift+Z** pins a point where the helicopter is, without stopping.
+- Big map: **Pin point** tool, click to add a point, click a point to fly to it (it becomes the target),
+  right-click a point to delete it. **Draw zone** tool: choose No-fly / Caution / Training / Other, click
+  the corners, then **Finish zone** (or double-click). Right-click inside a zone deletes it. Wheel zooms,
+  dragging moves the map. Type a name in the box and press Enter to rename the selected point (or the last zone).
+- In flight, the target line shows bearing (true), distance, which way to turn and time to go at the
+  current ground speed; "INSIDE ZONE" appears while you are inside a zone. Each point is also a tall
+  beam with its name in the 3D world.
+- Points and zones are saved in the user data folder, `nav_marks_khouribga.json` (latitude/longitude are
+  shown in the big map's list).

@@ -74,6 +74,31 @@ func _run() -> void:
 		if int(b[6]) == 3:
 			nmin += 1
 	check("[M4d] real OSM landmarks and land use", nmin >= 8 and w.real_map.area_tiles.size() > 0 and t.map_meta["areas"].size() > 50, "%d minaret parts, %d land-use areas in %d meshes" % [nmin, t.map_meta["areas"].size(), w.real_map.area_tiles.size()])
+	var nm = main.nav_map
+	nm.map_id = "test_tmp"
+	nm.pins.clear()
+	nm.zones.clear()
+	nm.target = -1
+	var hx: Vector2 = nm.heli_xz()
+	var pname: String = nm.drop_pin_here()
+	nm.pins.append({"name": "North", "x": hx.x, "z": hx.y - 2000.0})
+	nm.target = 1
+	var tt: String = nm.target_text()
+	nm.zones.append({"name": "Test zone", "color": 0, "pts": [[hx.x - 50, hx.y - 50], [hx.x + 50, hx.y - 50], [hx.x + 50, hx.y + 50], [hx.x - 50, hx.y + 50]]})
+	var inside: int = nm.zone_at(hx)
+	nm._save()
+	nm.pins.clear()
+	nm.zones.clear()
+	nm._load()
+	nm.set_mode(nm.Mode.SMALL)
+	await process_frame
+	nm.set_mode(nm.Mode.BIG)
+	await process_frame
+	await process_frame
+	nm.set_mode(nm.Mode.OFF)
+	main._set_paused(false)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://nav_marks_test_tmp.json"))
+	check("[M10] moving map: pins, target bearing, zones, saved", pname == "P1" and tt.begins_with("TO North   000°   2.0 km") and inside == 0 and nm.pins.size() == 2 and nm.zones.size() == 1 and nm.markers.get_child_count() >= 4, "%s | zone hit %d | reloaded %d pins %d zones" % [tt, inside, nm.pins.size(), nm.zones.size()])
 	var s0: String = w.season
 	main.set_season("spring")
 	var tex_sp = t.ortho

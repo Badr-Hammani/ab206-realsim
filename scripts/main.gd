@@ -15,6 +15,7 @@ const Hud = preload("res://scripts/ui/hud.gd")
 const PanelScript = preload("res://scripts/ui/instrument_panel.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const JoyPanel = preload("res://scripts/ui/joy_panel.gd")
+const NavMap = preload("res://scripts/ui/nav_map.gd")
 const HeliAudio = preload("res://scripts/audio/heli_audio.gd")
 const Instructor = preload("res://scripts/core/instructor.gd")
 const Landing = preload("res://scripts/core/landing_rating.gd")
@@ -40,6 +41,7 @@ var panel_vp: SubViewport
 var panel3d
 var menu
 var joy
+var nav_map                     # moving map with pins and zones (real maps only)
 var touch
 var phone
 var phone_panel
@@ -130,6 +132,10 @@ func _ready() -> void:
 	joy.ui_theme = menu._theme
 	add_child(joy)
 	joy.closed.connect(func() -> void: _set_paused(menu.visible))
+	nav_map = NavMap.new()
+	add_child(nav_map)
+	nav_map.setup(self, world.terrain, world.map_id)
+	nav_map.closed.connect(func() -> void: _set_paused(menu.visible))
 	touch = TouchControls.new()
 	touch.main = self
 	touch.controls = controls
@@ -361,13 +367,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		controls.mouse_look_held = event.pressed
 	if event is InputEventMouseMotion and controls.mouse_look_held:
 		cam_rig.mouse_look(event.relative)
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active:
+	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active and not nav_map.is_big():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	match event.physical_keycode:
 		KEY_ESCAPE:
-			if phone_panel.visible:
+			if nav_map.is_big():
+				nav_map.set_mode(nav_map.Mode.OFF)
+			elif phone_panel.visible:
 				phone_panel.close()
 				_set_paused(menu.visible)
 			elif joy.visible:
@@ -445,6 +453,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_sim_speed(0.75 if sim_speed > 0.9 else (0.5 if sim_speed > 0.6 else 1.0))
 		KEY_TAB:
 			show_panel_2d = not show_panel_2d
+		KEY_Z:
+			if event.shift_pressed:
+				if nav_map.available():
+					instructor.force("Point %s pinned here. Z opens the map; click a point to fly to it." % nav_map.drop_pin_here())
+			elif not nav_map.available():
+				instructor.force("The moving map is available on the Khouribga map (Esc > Fly > Map).")
+			elif not menu.visible:
+				nav_map.cycle()
+				if nav_map.is_big():
+					_set_paused(true)
+		KEY_EQUAL, KEY_KP_ADD:
+			nav_map.zoom_small(0.8)
+		KEY_MINUS, KEY_KP_SUBTRACT:
+			nav_map.zoom_small(1.25)
 		KEY_F12:
 			take_screenshot("")
 
@@ -538,7 +560,7 @@ func _autoshot_step() -> void:
 func _set_paused(on: bool) -> void:
 	paused = on
 	get_tree().paused = on
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (menu.visible or joy.visible or phone_panel.visible or touch.active) else Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (menu.visible or joy.visible or phone_panel.visible or touch.active or (nav_map != null and nav_map.is_big())) else Input.MOUSE_MODE_CAPTURED
 
 func _on_menu_action(a: String) -> void:
 	match a:
