@@ -15,6 +15,7 @@ const Hud = preload("res://scripts/ui/hud.gd")
 const PanelScript = preload("res://scripts/ui/instrument_panel.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const JoyPanel = preload("res://scripts/ui/joy_panel.gd")
+const NavMap = preload("res://scripts/ui/nav_map.gd")
 const HeliAudio = preload("res://scripts/audio/heli_audio.gd")
 const Instructor = preload("res://scripts/core/instructor.gd")
 const Landing = preload("res://scripts/core/landing_rating.gd")
@@ -40,6 +41,7 @@ var panel_vp: SubViewport
 var panel3d
 var menu
 var joy
+var nav_map                     # moving map with pins and zones (real maps only)
 var touch
 var phone
 var phone_panel
@@ -60,6 +62,12 @@ var show_panel_2d := false
 var paused := false
 var _frame_ms: Array[float] = []
 var _fdm_usec_frame := 0
+# Auto quality: if the frame rate stays low for a few seconds, step the graphics preset down.
+const AUTO_Q_FPS := 38.0
+var _auto_q_off := false
+var _auto_q_wait := 8.0
+var _auto_q_ms := 0.0
+var _auto_q_n := 0
 var _touch_pending := false
 var _touch_sink := 0.0
 
@@ -69,7 +77,8 @@ func _ready() -> void:
 	world = World.new()
 	world.name = "World"
 	add_child(world)
-	world.build()
+	world.season = _startup_season()
+	world.build(_startup_map())
 	fdm.ground = world.terrain
 	refs = HoverRefs.new()
 	refs.name = "HoverRefs"
@@ -123,6 +132,10 @@ func _ready() -> void:
 	joy.ui_theme = menu._theme
 	add_child(joy)
 	joy.closed.connect(func() -> void: _set_paused(menu.visible))
+	nav_map = NavMap.new()
+	add_child(nav_map)
+	nav_map.setup(self, world.terrain, world.map_id)
+	nav_map.closed.connect(func() -> void: _set_paused(menu.visible))
 	touch = TouchControls.new()
 	touch.main = self
 	touch.controls = controls
@@ -209,7 +222,10 @@ func reset_hover() -> void:
 func reset_cruise() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
 	_place(p + Vector3(0, 300.0 + fdm.cg_height, 1500.0), 0.0, 80.0)
-	instructor.force("CRUISE 80 kt at about 1,000 ft above the valley floor, heading north up the valley. The main pad is straight ahead, 1.5 km.")
+	if world.map_id == "khouribga":
+		instructor.force("CRUISE 80 kt at about 1,000 ft above the Khouribga plateau, heading north. The helipad on the main apron is straight ahead, 1.5 km; runway 05/23 is on your right and the city to the north-east.")
+	else:
+		instructor.force("CRUISE 80 kt at about 1,000 ft above the valley floor, heading north up the valley. The main pad is straight ahead, 1.5 km.")
 
 func reset_autorotation() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
@@ -233,6 +249,50 @@ func set_sim_speed(v: float) -> void:
 
 func set_weight(kg: float) -> void:
 	fdm.set_mass(kg)
+
+## Map chosen at start-up: command line --map=<id> wins, else the saved setting.
+var map_override := ""            # tests set this before adding the scene
+static var _cmdline_map_used := false   # --map= only applies to the first start, not after a map switch
+
+func _startup_map() -> String:
+	if map_override != "":
+		return map_override
+	if not _cmdline_map_used:
+		_cmdline_map_used = true
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--map="):
+				return a.substr(6)
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) == OK:
+		return str(cf.get_value("world", "map", "valle"))
+	return "valle"
+
+## Photo season of real maps: saved choice, else by today's date (Dec-May green, Jun-Nov dry).
+func _startup_season() -> String:
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) == OK and cf.has_section_key("world", "season"):
+		return str(cf.get_value("world", "season"))
+	var m: int = Time.get_date_dict_from_system()["month"]
+	return "spring" if (m >= 12 or m <= 5) else "summer"
+
+func set_season(s: String) -> void:
+	world.set_season(s)
+	if nav_map:
+		nav_map.set_season(s)
+	_save_settings()
+
+## Switch map: saves the choice and rebuilds the whole scene (about 2-4 s on the real map).
+func set_map(id: String) -> void:
+	if id == world.map_id:
+		return
+	world.map_id = id
+	_save_settings()
+	controls.save_config()
+	phone.save_config()
+	phone.stop()
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	get_tree().reload_current_scene()
 
 func set_visibility(m: float) -> void:
 	visibility_m = m
@@ -268,7 +328,37 @@ func apply_preset(i: int) -> void:
 			world.set_tree_count(9000)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 12000.0
+	world.set_draw_preset(preset)
 	_save_settings()
+
+## Lowers the preset (then the render scale on Low) when the average FPS stays under
+## AUTO_Q_FPS for 4 s of flying. Pressing F7 yourself turns this off for the session.
+func _auto_quality(delta: float) -> void:
+	if _auto_q_off or paused or _auto_dir != "" or DisplayServer.get_name() == "headless":
+		return
+	if not get_window().has_focus():
+		return
+	if _auto_q_wait > 0.0:
+		_auto_q_wait -= delta
+		return
+	_auto_q_ms += delta * 1000.0
+	_auto_q_n += 1
+	if _auto_q_ms < 4000.0:
+		return
+	var fps := 1000.0 * _auto_q_n / _auto_q_ms
+	_auto_q_ms = 0.0
+	_auto_q_n = 0
+	if fps >= AUTO_Q_FPS:
+		return
+	_auto_q_wait = 3.0
+	if preset > 0:
+		apply_preset(preset - 1)
+		instructor.force("Frame rate was low (%.0f FPS): graphics lowered to %s. F7 changes it." % [fps, preset_name()])
+	elif get_viewport().scaling_3d_scale > 0.41:
+		get_viewport().scaling_3d_scale = 0.4
+		instructor.force("Frame rate still low (%.0f FPS): render scale lowered." % fps)
+	else:
+		_auto_q_off = true
 
 func preset_name() -> String:
 	return ["Low", "Medium", "High"][preset]
@@ -279,13 +369,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		controls.mouse_look_held = event.pressed
 	if event is InputEventMouseMotion and controls.mouse_look_held:
 		cam_rig.mouse_look(event.relative)
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active:
+	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active and not nav_map.is_big():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	match event.physical_keycode:
 		KEY_ESCAPE:
-			if phone_panel.visible:
+			if nav_map.is_big():
+				nav_map.set_mode(nav_map.Mode.OFF)
+			elif phone_panel.visible:
 				phone_panel.close()
 				_set_paused(menu.visible)
 			elif joy.visible:
@@ -317,6 +409,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F6:
 			hud.show_telemetry = not hud.show_telemetry
 		KEY_F7:
+			_auto_q_off = true
 			apply_preset((preset + 1) % 3)
 			instructor.force("Graphics preset: " + preset_name())
 		KEY_F8:
@@ -362,6 +455,22 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_sim_speed(0.75 if sim_speed > 0.9 else (0.5 if sim_speed > 0.6 else 1.0))
 		KEY_TAB:
 			show_panel_2d = not show_panel_2d
+		KEY_K:
+			if cam_rig.mode == cam_rig.Mode.FREE:
+				pass                  # I J K L U O move the free camera
+			elif event.shift_pressed:
+				if nav_map.available():
+					instructor.force("Point %s pinned here. K opens the map; click a point to fly to it." % nav_map.drop_pin_here())
+			elif not nav_map.available():
+				instructor.force("The moving map is available on the Khouribga map (Esc > Fly > Map).")
+			elif not menu.visible:
+				nav_map.cycle()
+				if nav_map.is_big():
+					_set_paused(true)
+		KEY_EQUAL, KEY_KP_ADD:
+			nav_map.zoom_small(0.8)
+		KEY_MINUS, KEY_KP_SUBTRACT:
+			nav_map.zoom_small(1.25)
 		KEY_F12:
 			take_screenshot("")
 
@@ -455,7 +564,7 @@ func _autoshot_step() -> void:
 func _set_paused(on: bool) -> void:
 	paused = on
 	get_tree().paused = on
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (menu.visible or joy.visible or phone_panel.visible or touch.active) else Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (menu.visible or joy.visible or phone_panel.visible or touch.active or (nav_map != null and nav_map.is_big())) else Input.MOUSE_MODE_CAPTURED
 
 func _on_menu_action(a: String) -> void:
 	match a:
@@ -542,6 +651,7 @@ func _process(delta: float) -> void:
 	_frame_ms.append(delta * 1000.0)
 	if _frame_ms.size() > 600:
 		_frame_ms.pop_front()
+	_auto_quality(delta)
 	var xf := Transform3D(fdm.basis, fdm.pos)
 	heli.global_transform = xf
 	heli.update_visual(fdm, 0.0 if paused else delta)
@@ -670,6 +780,9 @@ func _save_settings() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("graphics", "preset", preset)
 	cf.set_value("world", "visibility", visibility_m)
+	cf.set_value("world", "map", world.map_id if world else "valle")
+	if world:
+		cf.set_value("world", "season", world.season)
 	if fdm:
 		cf.set_value("aircraft", "mass", fdm.mass)
 		cf.set_value("weather", "wind_from", fdm.atmo.wind_from_deg)

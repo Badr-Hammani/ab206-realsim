@@ -224,6 +224,7 @@ var _k := 0
 func _initialize() -> void:
 	log_line("AB206 REALSIM training-level tests  %s" % Time.get_datetime_string_from_system())
 	main = load("res://scenes/main.tscn").instantiate()
+	main.map_override = "valle"      # always the training valley, whatever map you picked
 	root.add_child(main)
 
 func _process(_delta: float) -> bool:
