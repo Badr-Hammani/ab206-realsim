@@ -1,220 +1,85 @@
-<!DOCTYPE html>
-<html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-		<title>AB206 REALSIM</title>
-		<style>
-html, body, #canvas {
-	margin: 0;
-	padding: 0;
-	border: 0;
-}
-
-body {
-	color: white;
-	background-color: black;
-	overflow: hidden;
-	touch-action: none;
-}
-
-#canvas {
-	display: block;
-}
-
-#canvas:focus {
-	outline: none;
-}
-
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-}
-
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
-}
-
-#status {
-	background-color: #14171a;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-	visibility: hidden;
-}
-
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
-}
-
-#status-splash.show-image--false {
-	display: none;
-}
-
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
-
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
-
-#status-progress, #status-notice {
-	display: none;
-}
-
-#status-progress {
-	bottom: 10%;
-	width: 50%;
-	margin: 0 auto;
-}
-
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 1;
-}
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
-
-	</head>
-	<body>
-		<canvas id="canvas">
-			Your browser does not support the canvas tag.
-		</canvas>
-
-		<noscript>
-			Your browser does not support JavaScript.
-		</noscript>
-
-		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
-			<div id="status-notice"></div>
-		</div>
-
-		<script src="index.js"></script>
-		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":277960,"index.wasm":37700666},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
-const GODOT_THREADS_ENABLED = false;
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>AB206 REALSIM</title>
+<meta name="description" content="Bell 206B-3 helicopter simulator, web build with touch controls">
+<style>
+/* One-screen game shell: full-bleed canvas, a single loading card. Deliberately single dark theme (cockpit at dusk). */
+:root{--bg:#0d1114;--panel:#151c21;--fg:#e8eef2;--muted:#8fa3b0;--accent:#7fd3ff;--warn:#ffcf5a;color-scheme:dark;
+--display:"Barlow Condensed",Arial Narrow,system-ui,sans-serif;--body:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);overflow:hidden;font-family:var(--body);touch-action:none;-webkit-user-select:none;user-select:none}
+#canvas{display:block;position:fixed;inset:0;width:100%;height:100%;background:var(--bg);outline:none}
+#overlay{position:fixed;inset:0;display:grid;place-items:center;background:radial-gradient(circle at 50% 40%,#1b262e 0,var(--bg) 70%);z-index:5;padding:max(16px,env(safe-area-inset-left,0px));}
+.card{max-width:34rem;width:100%;display:grid;gap:14px;text-align:left}
+h1{font-family:var(--display);font-weight:600;letter-spacing:.04em;font-size:2.2rem;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:0;line-height:1.45;font-size:.95rem}
+.bar{height:8px;background:var(--panel);border-radius:4px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+[hidden]{display:none!important}
+#msg{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+#msg.err{color:var(--warn)}
+button{font:600 1.1rem var(--display);letter-spacing:.08em;text-transform:uppercase;padding:14px 22px;border:2px solid var(--accent);background:transparent;color:var(--accent);border-radius:6px;cursor:pointer;justify-self:start}
+button:focus-visible{outline:3px solid var(--warn);outline-offset:3px}
+button[disabled]{opacity:.4}
+ul{margin:0;padding-left:1.1rem;color:var(--muted);font-size:.85rem;line-height:1.5}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&display=swap">
+<canvas id="canvas" tabindex="0">Your browser does not support the canvas element.</canvas>
+<div id="overlay"><div class="card">
+<h1>AB206 REALSIM - Bell 206B-3</h1>
+<p class="sub">Educational simulation, not a training device. Turn the phone to landscape. Left strip is the collective, the bottom slider is the pedals, the round pad on the right is the cyclic. Starts at Khouribga (GMMK).</p>
+<div class="bar"><i id="prog"></i></div>
+<div id="msg">Loading...</div>
+<button id="go" type="button" disabled>Start flying</button>
+<ul><li>Keyboard and mouse also work on a computer (F1 for controls).</li><li>MAP opens the moving map (tap again for full screen), PIN drops a point where you are, INSTR zooms on the instruments, MAP +/- zooms the small map.</li><li>Hard with one hand? The PEDALS button switches to AUTO (the pedals are flown for you) or TILT (turn the phone like a steering wheel). On iPhone allow Motion when asked.</li><li>Graphics start on Ultra on iPhone (MENU, Settings to change). Real 3D terrain covers about 100 km around Khouribga, including the mine pits. A real HD aerial photo streams onto the ground while you fly, when your connection allows it.</li><li>Sound starts after you tap Start. MENU switches map, lessons and missions.</li></ul>
+</div></div>
+<script>
+// The engine binary is stored gzipped (hosting limits each file to 15 MB and to web file types); unpack it in the browser.
+(function(){
+  const realFetch = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (/(^|\/)index\.wasm(\?|$)/.test(url)) {
+      return realFetch('engine.gz.wasm', init).then(function(r){
+        if (!r.ok) throw new Error('Could not download the engine (' + r.status + ')');
+        if (typeof DecompressionStream === 'undefined') throw new Error('This browser is too old to unpack the simulator. Update Chrome or Safari.');
+        return new Response(r.body.pipeThrough(new DecompressionStream('gzip')), {status:200, headers:{'Content-Type':'application/wasm','Content-Length':'37700666'}});
+      });
+    }
+    if (/(^|\/)index\.pck(\?|$)/.test(url)) {
+      // game data is split in two parts (15 MB per-file hosting limit); join them back together
+      return Promise.all(['gamedata.part0.wasm','gamedata.part1.wasm','gamedata.part2.wasm'].map(function(n){
+        return realFetch(n).then(function(r){ if (!r.ok) throw new Error('Could not download game data (' + r.status + ')'); return r.arrayBuffer(); });
+      })).then(function(parts){
+        const total = parts.reduce(function(a,b){ return a + b.byteLength; }, 0);
+        const out = new Uint8Array(total); let o = 0;
+        parts.forEach(function(p){ out.set(new Uint8Array(p), o); o += p.byteLength; });
+        return new Response(out.buffer, {status:200, headers:{'Content-Type':'application/octet-stream','Content-Length':String(total)}});
+      });
+    }
+    return realFetch(input, init);
+  };
+})();
+</script>
+<script src="index.js"></script>
+<script>
+const GODOT_CONFIG = {"args":["--","--map=khouribga"],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":32983324,"index.wasm":37700666},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const engine = new Engine(GODOT_CONFIG);
-
-(function () {
-	const statusOverlay = document.getElementById('status');
-	const statusProgress = document.getElementById('status-progress');
-	const statusNotice = document.getElementById('status-notice');
-
-	let initializing = true;
-	let statusMode = '';
-
-	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) {
-			return;
-		}
-		if (mode === 'hidden') {
-			statusOverlay.remove();
-			initializing = false;
-			return;
-		}
-		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
-		statusMode = mode;
-	}
-
-	function setStatusNotice(text) {
-		while (statusNotice.lastChild) {
-			statusNotice.removeChild(statusNotice.lastChild);
-		}
-		const lines = text.split('\n');
-		lines.forEach((line) => {
-			statusNotice.appendChild(document.createTextNode(line));
-			statusNotice.appendChild(document.createElement('br'));
-		});
-	}
-
-	function displayFailureNotice(err) {
-		console.error(err);
-		if (err instanceof Error) {
-			setStatusNotice(err.message);
-		} else if (typeof err === 'string') {
-			setStatusNotice(err);
-		} else {
-			setStatusNotice('An unknown error occurred.');
-		}
-		setStatusMode('notice');
-		initializing = false;
-	}
-
-	const missing = Engine.getMissingFeatures({
-		threads: GODOT_THREADS_ENABLED,
-	});
-
-	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
-		}
-	} else {
-		setStatusMode('progress');
-		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
-				}
-			},
-		}).then(() => {
-			setStatusMode('hidden');
-		}, displayFailureNotice);
-	}
-}());
-		</script>
-	</body>
-</html>
-
+const msg = document.getElementById('msg'), prog = document.getElementById('prog'), go = document.getElementById('go');
+function fail(e){ console.error(e); msg.className='err'; msg.textContent = 'Could not start: ' + (e && e.message ? e.message : e); }
+const missing = Engine.getMissingFeatures({threads:false});
+go.disabled = false; msg.textContent = 'Tap Start to download the simulator (about 43 MB, use Wi-Fi) and fly.';
+if (missing.length) { go.disabled = true; fail(new Error('missing browser features: ' + missing.join(', '))); }
+go.addEventListener('click', function(){
+  go.disabled = true; msg.textContent = 'Downloading...';
+  // tilt pedals: iPhone only gives motion data after this tap asks for it; Android just sends it
+  function listenMotion(){ if (window.ab206GravOn) return; window.ab206GravOn = true;
+    window.addEventListener('devicemotion', function(e){ var g = e.accelerationIncludingGravity; if (g && g.x !== null) window.ab206Grav = [g.x, g.y, g.z]; }); }
+  try { if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') { DeviceMotionEvent.requestPermission().then(function(r){ if (r === 'granted') listenMotion(); }).catch(function(){}); } else { listenMotion(); } } catch(e){}
+  try { const el = document.documentElement; if (el.requestFullscreen) el.requestFullscreen().catch(function(){}); } catch(e){}
+  try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); } catch(e){}
+  engine.startGame({onProgress:function(c,t){ if(t>0){ prog.style.width=(c/t*100).toFixed(0)+'%'; msg.textContent='Downloading... '+(c/t*100).toFixed(0)+'%'; if(c>=t) setTimeout(hideOverlay,1500); } }}).then(function(){
+    hideOverlay();
+  }).catch(fail);
+});
+function hideOverlay(){ document.getElementById('overlay').hidden = true; document.getElementById('canvas').focus(); }
+</script>
+</body></html>
