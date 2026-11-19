@@ -35,13 +35,14 @@ for it in ITEMS:
 refl = np.nanmedian(np.stack(stack), axis=0)
 refl = np.nan_to_num(refl, nan=0.15)
 # natural colour: linear exposure, slight atmospheric dehaze on blue, sRGB-like gamma, soft shoulder
-exp = 2.4
+exp = 2.2
 refl[2] = np.maximum(refl[2] - 0.010, 0)
 x = np.clip(refl * exp, 0, None)
 x = x / (1 + 0.18 * x)               # soft highlight roll-off (bright soils and roofs keep detail)
 srgb = np.where(x <= 0.0031308, 12.92 * x, 1.055 * np.power(x, 1 / 2.4) - 0.055)
 lum = srgb.mean(axis=0, keepdims=True)
-srgb = lum + (srgb - lum) * 0.92     # small saturation trim: the photo is lit again by the 3D sun
+srgb = lum + (srgb - lum) * 1.05
+srgb = 0.5 + (srgb - 0.5) * 1.15      # a little contrast: the sim's haze and tonemapper flatten it again
 img = Image.fromarray((np.clip(srgb, 0, 1) * 255 + 0.5).astype(np.uint8).transpose(1, 2, 0))
 img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
 buf = io.BytesIO()
