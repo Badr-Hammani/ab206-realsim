@@ -71,5 +71,11 @@ ESA WorldCover 2021 (CC BY 4.0); © OpenStreetMap contributors (ODbL) via Overtu
 - In flight, the target line shows bearing (true), distance, which way to turn and time to go at the
   current ground speed; "INSIDE ZONE" appears while you are inside a zone. Each point is also a tall
   beam with its name in the 3D world.
+- The map covers 64 x 64 km around Khouribga (Sentinel-2 photo at 32 m per pixel, same season as the
+  ground) with town and village names and populations (Overture Maps divisions) and the main roads and
+  railways (OpenStreetMap). The thin white square marks the 16 km area that has full 3D detail.
+  Range rings around the helicopter, a scale bar and (big map) a cursor readout of bearing, distance and
+  latitude/longitude help with navigation. Labels that would overlap are left out; zoom in to see them.
+  Rebuild with tools/maps/build_region.py and photo_composite.py with REGION=1.
 - Points and zones are saved in the user data folder, `nav_marks_khouribga.json` (latitude/longitude are
   shown in the big map's list).

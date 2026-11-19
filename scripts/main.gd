@@ -277,6 +277,8 @@ func _startup_season() -> String:
 
 func set_season(s: String) -> void:
 	world.set_season(s)
+	if nav_map:
+		nav_map.set_season(s)
 	_save_settings()
 
 ## Switch map: saves the choice and rebuilds the whole scene (about 2-4 s on the real map).
