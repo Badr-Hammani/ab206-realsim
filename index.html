@@ -29,8 +29,13 @@ ul{margin:0;padding-left:1.1rem;color:var(--muted);font-size:.85rem;line-height:
 <div class="bar"><i id="prog"></i></div>
 <div id="msg">Loading...</div>
 <button id="go" type="button" disabled>Start flying</button>
-<ul><li>Keyboard and mouse also work on a computer (F1 for controls).</li><li>MAP opens the moving map (tap again for full screen), PIN drops a point where you are, INSTR zooms on the instruments, MAP +/- zooms the small map.</li><li>Hard with one hand? The PEDALS button switches to AUTO (the pedals are flown for you) or TILT (turn the phone like a steering wheel). On iPhone allow Motion when asked.</li><li>Graphics start on Ultra on iPhone (MENU, Settings to change). Real 3D terrain covers about 100 km around Khouribga, including the mine pits. A real HD aerial photo streams onto the ground while you fly, when your connection allows it.</li><li>Sound starts after you tap Start. MENU switches map, lessons and missions.</li></ul>
+<ul><li>Keyboard and mouse also work on a computer (F1 for controls).</li><li>MAP opens the moving map (tap again for full screen), PIN drops a point where you are, INSTR zooms on the instruments, MAP +/- zooms the small map.</li><li>Hard with one hand? The PEDALS button switches to AUTO (the pedals are flown for you) or TILT (turn the phone like a steering wheel). On iPhone allow Motion when asked.</li><li>Graphics start on High on iPhone (MENU, Settings to change; Ultra needs a lot of memory). Real 3D terrain covers about 100 km around Khouribga, including the mine pits. A real HD aerial photo streams onto the ground and the map while you fly. It works on the GitHub link (badr-hammani.github.io/ab206-realsim) in Safari; inside the Claude app it is blocked.</li><li>Sound starts after you tap Start. MENU switches map, lessons and missions.</li></ul>
 </div></div>
+<script>
+// iPhone: stop Safari's own page pinch-zoom (two fingers on the map zoom the map, not the page)
+['gesturestart','gesturechange','gestureend'].forEach(function(t){ document.addEventListener(t, function(e){ e.preventDefault(); }, {passive:false}); });
+document.addEventListener('touchmove', function(e){ if (e.touches && e.touches.length > 1) e.preventDefault(); }, {passive:false});
+</script>
 <script>
 // The engine binary is stored gzipped (hosting limits each file to 15 MB and to web file types); unpack it in the browser.
 (function(){
@@ -46,7 +51,7 @@ ul{margin:0;padding-left:1.1rem;color:var(--muted);font-size:.85rem;line-height:
     }
     if (/(^|\/)index\.pck(\?|$)/.test(url)) {
       // game data is split in two parts (15 MB per-file hosting limit); join them back together
-      return Promise.all(['gamedata.part0.wasm','gamedata.part1.wasm','gamedata.part2.wasm'].map(function(n){
+      return Promise.all(['gamedata.part0.wasm','gamedata.part1.wasm'].map(function(n){
         return realFetch(n).then(function(r){ if (!r.ok) throw new Error('Could not download game data (' + r.status + ')'); return r.arrayBuffer(); });
       })).then(function(parts){
         const total = parts.reduce(function(a,b){ return a + b.byteLength; }, 0);
@@ -61,12 +66,12 @@ ul{margin:0;padding-left:1.1rem;color:var(--muted);font-size:.85rem;line-height:
 </script>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":["--","--map=khouribga"],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":32983324,"index.wasm":37700666},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":["--","--map=khouribga"],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":19618716,"index.wasm":37700666},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const engine = new Engine(GODOT_CONFIG);
 const msg = document.getElementById('msg'), prog = document.getElementById('prog'), go = document.getElementById('go');
 function fail(e){ console.error(e); msg.className='err'; msg.textContent = 'Could not start: ' + (e && e.message ? e.message : e); }
 const missing = Engine.getMissingFeatures({threads:false});
-go.disabled = false; msg.textContent = 'Tap Start to download the simulator (about 43 MB, use Wi-Fi) and fly.';
+go.disabled = false; msg.textContent = 'Tap Start to download the simulator (about 29 MB, use Wi-Fi) and fly.';
 if (missing.length) { go.disabled = true; fail(new Error('missing browser features: ' + missing.join(', '))); }
 go.addEventListener('click', function(){
   go.disabled = true; msg.textContent = 'Downloading...';
