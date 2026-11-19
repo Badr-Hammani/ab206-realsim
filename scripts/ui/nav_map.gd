@@ -1,7 +1,7 @@
 extends CanvasLayer
 ## Moving map for real maps (Khouribga): satellite photo, helicopter, runway and pads.
-## Z cycles small corner map -> big map (pauses, mouse to pin points and draw zones) -> off.
-## Shift+Z drops a pin where the helicopter is. Clicking a pin makes it the navigation target:
+## K cycles small corner map -> big map (pauses, mouse to pin points and draw zones) -> off.
+## Shift+K drops a pin where the helicopter is. Clicking a pin makes it the navigation target:
 ## bearing, distance and time to go are shown on screen. Pins and zones are saved per map in
 ## user://nav_marks_<map>.json.
 
@@ -223,7 +223,7 @@ func _build_big() -> void:
 			draft.remove_at(draft.size() - 1))
 	_btn(bar, "Centre on helicopter", func() -> void: follow = true)
 	_btn(bar, "Clear target", func() -> void: target = -1; _save(); _refresh_info())
-	_btn(bar, "Close (Z / Esc)", func() -> void: set_mode(Mode.OFF))
+	_btn(bar, "Close (K / Esc)", func() -> void: set_mode(Mode.OFF))
 	var hb := HBoxContainer.new()
 	hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vb.add_child(hb)
@@ -274,7 +274,7 @@ func _refresh_info() -> void:
 		s += "PIN TOOL: click on the map to add a point. Click a point to fly to it. Right-click a point to delete it.\n"
 	else:
 		s += "ZONE TOOL (%s): click the corners of the zone, then Finish zone. Right-click deletes a zone.\n" % ZONE_NAMES[zone_color]
-	s += "Wheel: zoom   Drag: move the map   Shift+Z in flight: pin where you are\n\n"
+	s += "Wheel: zoom   Drag: move the map   Shift+K in flight: pin where you are\n\n"
 	s += "Points (%d):\n" % pins.size()
 	for i in pins.size():
 		var p: Dictionary = pins[i]

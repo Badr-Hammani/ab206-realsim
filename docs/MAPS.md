@@ -62,8 +62,8 @@ ESA WorldCover 2021 (CC BY 4.0); © OpenStreetMap contributors (ODbL) via Overtu
 
 ## Moving map, pins and zones (Khouribga)
 
-- **Z** cycles: small map (bottom-left corner, north up) → big map (the sim pauses, mouse is free) → off.
-  **+ / -** zoom the small map. **Shift+Z** pins a point where the helicopter is, without stopping.
+- **K** cycles: small map (bottom-left corner, north up) → big map (the sim pauses, mouse is free) → off.
+  **+ / -** zoom the small map. **Shift+K** pins a point where the helicopter is, without stopping.
 - Big map: **Pin point** tool, click to add a point, click a point to fly to it (it becomes the target),
   right-click a point to delete it. **Draw zone** tool: choose No-fly / Caution / Training / Other, click
   the corners, then **Finish zone** (or double-click). Right-click inside a zone deletes it. Wheel zooms,

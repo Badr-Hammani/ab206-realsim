@@ -453,10 +453,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_sim_speed(0.75 if sim_speed > 0.9 else (0.5 if sim_speed > 0.6 else 1.0))
 		KEY_TAB:
 			show_panel_2d = not show_panel_2d
-		KEY_Z:
-			if event.shift_pressed:
+		KEY_K:
+			if cam_rig.mode == cam_rig.Mode.FREE:
+				pass                  # I J K L U O move the free camera
+			elif event.shift_pressed:
 				if nav_map.available():
-					instructor.force("Point %s pinned here. Z opens the map; click a point to fly to it." % nav_map.drop_pin_here())
+					instructor.force("Point %s pinned here. K opens the map; click a point to fly to it." % nav_map.drop_pin_here())
 			elif not nav_map.available():
 				instructor.force("The moving map is available on the Khouribga map (Esc > Fly > Map).")
 			elif not menu.visible:
