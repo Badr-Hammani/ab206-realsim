@@ -1,4 +1,4 @@
-# AB206 REALSIM - Bell 206B-3 helicopter simulator (Milestone 2.12: training)
+# AB206 REALSIM - Bell 206B-3 helicopter simulator (Milestone 2.13: Mission 2 briefings)
 
 A personal learning simulator for the Bell 206B-3 JetRanger III (Allison/Rolls-Royce 250-C20J),
 built with Godot 4.6 and a project-owned helicopter flight model.

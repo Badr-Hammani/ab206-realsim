@@ -440,7 +440,7 @@ func _build_lessons() -> void:
 	ac.add_child(_segmented(ASSIST_ITEMS, main.assist.level, func(i: int) -> void:
 		main.set_assist(i)
 		build()))
-	for gi in Lessons.GROUPS.size():
+	for gi in Lessons.GROUP_ORDER:
 		var c := _card(Lessons.GROUPS[gi])
 		for l in Lessons.LIST:
 			if int(l[3]) != gi:

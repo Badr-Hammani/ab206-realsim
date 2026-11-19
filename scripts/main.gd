@@ -56,6 +56,7 @@ var ghost := {}                   # instructor's suggested control positions (HU
 var preset := 1
 var visibility_m := 12000.0
 var vsi_lagged := 0.0
+var ball_lagged := 0.0        # slip ball (g, + = right), damped like the real liquid-filled tube
 var show_panel_2d := false
 var paused := false
 var _frame_ms: Array[float] = []
@@ -179,6 +180,7 @@ func _place(pos: Vector3, heading: float, speed_kt: float) -> void:
 	fdm.omega = Vector3.ZERO
 	controls.set_from_trim(fdm.cyclic_lon, fdm.cyclic_lat, fdm.collective, fdm.pedal, 1.0)
 	vsi_lagged = fdm.vs_fpm()
+	ball_lagged = 0.0
 
 func reset_on_pad() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
@@ -570,10 +572,11 @@ func _process(delta: float) -> void:
 		hud.show_landing("TAIL STRIKE", Color(1.0, 0.35, 0.3))
 	# instrument values (VSI has a ~1.5 s lag like a real pressure VSI)
 	vsi_lagged = lerpf(vsi_lagged, fdm.vs_fpm(), clampf(delta / 1.5, 0.0, 1.0))
+	ball_lagged = lerpf(ball_lagged, fdm.ball_g(), clampf(delta / 0.35, 0.0, 1.0))   # liquid-damped ball
 	var vals := {
 		"tq": maxf(fdm.torque_pct, 0.0), "nr": fdm.nr_pct(), "n2": fdm.n2_pct(), "n1": fdm.n1,
 		"ias": fdm.ias_kt(), "pitch": fdm.pitch_deg(), "roll": fdm.roll_deg(),
-		"alt_ft": fdm.pos.y / 0.3048, "vsi": vsi_lagged, "hdg": fdm.heading_deg(),
+		"alt_ft": fdm.pos.y / 0.3048, "vsi": vsi_lagged, "hdg": fdm.heading_deg(), "ball": ball_lagged,
 		"low_rpm": fdm.nr_pct() < fdm._v("low_rpm_warning_pct"),
 	}
 	if phone.running:
