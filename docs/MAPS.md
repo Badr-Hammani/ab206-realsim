@@ -76,6 +76,9 @@ ESA WorldCover 2021 (CC BY 4.0); © OpenStreetMap contributors (ODbL) via Overtu
   railways (OpenStreetMap). The thin white square marks the 16 km area that has full 3D detail.
   Range rings around the helicopter, a scale bar and (big map) a cursor readout of bearing, distance and
   latitude/longitude help with navigation. Labels that would overlap are left out; zoom in to see them.
+  Zoomed in below about 7 m per pixel, every OpenStreetMap street, track and the railway is drawn as a
+  clean line over the photo (sharper than the 10 m satellite pixels), with football pitches in green.
+  10 m Sentinel-2 is the sharpest free imagery for Khouribga; sharper aerial photos are not open data.
   Rebuild with tools/maps/build_region.py and photo_composite.py with REGION=1.
 - Points and zones are saved in the user data folder, `nav_marks_khouribga.json` (latitude/longitude are
   shown in the big map's list).

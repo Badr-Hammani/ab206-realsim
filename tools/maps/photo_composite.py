@@ -5,8 +5,8 @@ shadows of small clouds and one-day noise; a gentle sRGB curve gives natural col
 the over-saturated "TCI" quick-look. Writes <out>/photo_<season>_jpg.bin (2048 px, 8 m per pixel).
 Usage: python photo_composite.py <out_dir> <season> <item> [<item> ...]
        item = YYYY/M/S2X_29SPS_YYYYMMDD_0_L2A
-With REGION=1 in the environment it instead writes region_<season>_jpg.bin: 64 x 64 km at 32 m per pixel
-for the moving map, from the same dates on tiles 29SPS and 29SQS (overview level, 20 m).
+With REGION=1 in the environment it instead writes region_<season>_jpg.bin: 64 x 64 km at 16 m per pixel
+for the moving map, from the same dates on tiles 29SPS and 29SQS (full 10 m bands, averaged).
 """
 import sys, io, os
 import numpy as np
@@ -21,7 +21,7 @@ OUT, SEASON, ITEMS = sys.argv[1], sys.argv[2], sys.argv[3:]
 LON0, LAT0 = -6.9504834, 32.8594064
 REGION = os.environ.get("REGION") == "1"
 SIZE = 65536.0 if REGION else 16384.0
-PX = 2048
+PX = 4096 if REGION else 2048
 local = CRS.from_proj4(f"+proj=aeqd +lat_0={LAT0} +lon_0={LON0} +x_0=0 +y_0=0 +ellps=WGS84 +units=m")
 tf = from_origin(-SIZE / 2, SIZE / 2, SIZE / PX, SIZE / PX)
 B = "/vsicurl/https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/"
@@ -33,7 +33,7 @@ for it in ITEMS:
     for code, path in TILES:
         part = np.full((3, PX, PX), np.nan, np.float32)
         for k, band in enumerate(["B04", "B03", "B02"]):
-            kw = {"overview_level": 1} if REGION else {}
+            kw = {}
             src_path = None
             for variant in (it.replace("29SPS", code), it.replace("29SPS", code).replace("_0_L2A", "_1_L2A")):
                 try:

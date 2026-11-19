@@ -98,7 +98,7 @@ func _run() -> void:
 	nm.set_mode(nm.Mode.OFF)
 	main._set_paused(false)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://nav_marks_test_tmp.json"))
-	check("[M10] moving map: pins, target bearing, zones, saved", pname == "P1" and tt.begins_with("TO North   000°   2.0 km") and inside == 0 and nm.pins.size() == 2 and nm.zones.size() == 1 and nm.markers.get_child_count() >= 4 and nm.region_photo != null and nm.region.get("towns", []).size() > 20 and nm.region_roads.size() > 500, "%s | zone hit %d | reloaded %d pins %d zones | region: %d towns, %d roads" % [tt, inside, nm.pins.size(), nm.zones.size(), nm.region.get("towns", []).size(), nm.region_roads.size()])
+	check("[M10] moving map: pins, target bearing, zones, saved", pname == "P1" and tt.begins_with("TO North   000°   2.0 km") and inside == 0 and nm.pins.size() == 2 and nm.zones.size() == 1 and nm.markers.get_child_count() >= 4 and nm.region_photo != null and nm.region.get("towns", []).size() > 20 and nm.region_roads.size() > 500 and nm.streets.size() > 5000 and nm.pitches.size() > 3, "%s | zone hit %d | reloaded %d pins %d zones | region: %d towns, %d roads" % [tt, inside, nm.pins.size(), nm.zones.size(), nm.region.get("towns", []).size(), nm.region_roads.size()])
 	var s0: String = w.season
 	main.set_season("spring")
 	var tex_sp = t.ortho

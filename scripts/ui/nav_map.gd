@@ -41,6 +41,9 @@ var region := {}             # region.json: towns and main roads of the 64 km ar
 var region_photo: ImageTexture
 var region_roads: Array = []  # [{"cls": int, "pts": PackedVector2Array, "box": Rect2}]
 var mouse_pos := Vector2(-1, -1)
+var streets: Array = []       # detailed map streets: {"kind", "w", "pts", "box"} (OSM, 1,088 km)
+var pitches: Array = []       # sports pitches: [corners PackedVector2Array]
+const STREET_MPP := 7.0       # streets drawn as lines below this many metres per pixel
 ## motorway, trunk/primary, secondary, tertiary: colour, width
 const ROAD_STYLE := [[Color(1.0, 0.55, 0.25), 3.0], [Color(1.0, 0.85, 0.35), 2.4], [Color(1.0, 0.95, 0.75), 1.7], [Color(0.95, 0.95, 0.95, 0.8), 1.1], [Color(0.2, 0.2, 0.2), 2.0]]
 var markers: Node3D           # 3D beams at the pins, so they are visible while flying
@@ -60,6 +63,7 @@ func setup(m, t, id: String) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_load()
 	_load_region()
+	_load_streets()
 	_build_small()
 	_build_big()
 	nav_label = Label.new()
@@ -482,6 +486,8 @@ func _draw_map(v: Control, c: Vector2, mpp: float, big: bool) -> void:
 		else:
 			v.draw_polyline(sp, Color(0, 0, 0, 0.45), float(st[1]) + 1.5)
 			v.draw_polyline(sp, st[0], float(st[1]))
+	if mpp < STREET_MPP:
+		_draw_streets(v, c, mpp, view_world)
 	var font := ThemeDB.fallback_font
 	var fs := 13
 	# runway and pads
@@ -647,6 +653,65 @@ func _load_region() -> void:
 		region_roads.append({"cls": int(r[0]), "pts": pts, "box": bx.grow(50.0)})
 	set_season(str(terrain.season))
 
+## Street map layer: every OSM street, track and the railway as clean lines (sharper than the photo
+## when zoomed in), plus sports pitches. Only what is on screen is drawn.
+func _draw_streets(v: Control, c: Vector2, mpp: float, view_world: Rect2) -> void:
+	var fade := clampf((STREET_MPP - mpp) / 2.0, 0.0, 1.0)
+	for pc in pitches:
+		var cp := PackedVector2Array()
+		for q in pc:
+			cp.append(v.size * 0.5 + (q - c) / mpp)
+		v.draw_colored_polygon(cp, Color(0.35, 0.62, 0.3, 0.75 * fade))
+		cp.append(cp[0])
+		v.draw_polyline(cp, Color(1, 1, 1, 0.8 * fade), 1.0)
+	for pass_i in 2:
+		for r in streets:
+			if not view_world.intersects(r["box"]):
+				continue
+			var kind := int(r["kind"])
+			var w := float(r["w"])
+			var pts: PackedVector2Array = r["pts"]
+			var sp := PackedVector2Array()
+			sp.resize(pts.size())
+			for k in pts.size():
+				sp[k] = v.size * 0.5 + (pts[k] - c) / mpp
+			var px := maxf(1.0, w / mpp)
+			if pass_i == 0:
+				if kind == 0:
+					v.draw_polyline(sp, Color(0.25, 0.25, 0.25, 0.7 * fade), px + 2.0)
+			else:
+				if kind == 0:
+					var col := Color(1.0, 0.9, 0.55) if w >= 8.0 else Color(0.98, 0.98, 0.96)
+					v.draw_polyline(sp, Color(col.r, col.g, col.b, 0.95 * fade), px)
+				elif kind == 1:
+					v.draw_polyline(sp, Color(0.62, 0.45, 0.28, 0.9 * fade), maxf(1.0, px * 0.8))
+				else:
+					v.draw_polyline(sp, Color(0.15, 0.15, 0.15, fade), 2.5)
+					for k in range(0, sp.size() - 1, 2):
+						v.draw_line(sp[k], sp[k + 1], Color(1, 1, 1, fade), 1.2)
+
+func _load_streets() -> void:
+	for r in terrain.map_meta.get("roads", []):
+		var pts := PackedVector2Array()
+		for q in r[2]:
+			pts.append(Vector2(float(q[0]), float(q[1])))
+		if pts.size() < 2:
+			continue
+		var bx := Rect2(pts[0], Vector2.ZERO)
+		for q in pts:
+			bx = bx.expand(q)
+		streets.append({"kind": int(r[0]), "w": float(r[1]), "pts": pts, "box": bx.grow(20.0)})
+	for a in terrain.map_meta.get("areas", []):
+		if int(a[0]) != 1 or a.size() < 3:
+			continue
+		var rc: Array = a[2]
+		var ctr := Vector2(float(rc[0]), float(rc[1]))
+		var u := Vector2(float(rc[2]), float(rc[3]))
+		var vv := Vector2(-u.y, u.x)
+		var hl := float(rc[4]) * 0.5
+		var hw := float(rc[5]) * 0.5
+		pitches.append(PackedVector2Array([ctr + u * hl + vv * hw, ctr - u * hl + vv * hw, ctr - u * hl - vv * hw, ctr + u * hl - vv * hw]))
+
 ## Wide-area photo for the current season (the detailed photo is swapped by the terrain).
 func set_season(s: String) -> void:
 	var photos: Dictionary = region.get("photos", {})
@@ -656,6 +721,9 @@ func set_season(s: String) -> void:
 	var img := Image.new()
 	if img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(terrain.map_dir + "/" + f)) == OK:
 		img.generate_mipmaps()
+		# 4096 px: compressed on the GPU (about 11 MB instead of 90 MB) so integrated graphics stay smooth
+		if DisplayServer.get_name() != "headless":
+			img.compress(Image.COMPRESS_S3TC, Image.COMPRESS_SOURCE_SRGB)
 		region_photo = ImageTexture.create_from_image(img)
 
 func _path() -> String:
