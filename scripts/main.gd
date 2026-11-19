@@ -350,6 +350,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			cam_rig.cycle()
 		KEY_C:
 			cam_rig.recenter()
+		KEY_Z:
+			cam_rig.toggle_panel_focus()
 		KEY_H:
 			set_assist((assist.level + 1) % 4)
 		KEY_G:
@@ -382,7 +384,7 @@ var _auto_dir := ""
 
 func _autoshot_step() -> void:
 	_auto_frames += 1
-	var plan := {60: "pad_cockpit", 61: "", 120: "pad_chase", 121: "", 180: "hover_chase", 181: "", 240: "hover_cockpit", 241: "", 300: "cruise_chase", 360: "auto_cockpit", 400: "menu", 440: "joy", 480: "help", 520: "phone", 580: "lesson", 640: "lesson_menu", 644: "menu_settings", 648: "menu_weather", 720: "refs_cockpit", 760: "refs_chase", 820: "refs_cockpit_2m_left_high", 960: "mentor_handover", 970: "quit"}
+	var plan := {60: "pad_cockpit", 61: "", 120: "pad_chase", 121: "", 180: "hover_chase", 181: "", 240: "hover_cockpit", 241: "", 300: "cruise_chase", 360: "auto_cockpit", 400: "menu", 440: "joy", 480: "help", 520: "phone", 580: "lesson", 640: "lesson_menu", 644: "menu_settings", 648: "menu_weather", 720: "refs_cockpit", 760: "refs_chase", 820: "refs_cockpit_2m_left_high", 960: "mentor_handover", 1000: "panel_default", 1040: "panel_focus", 1080: "panel_focus_hover", 1090: "quit"}
 	match _auto_frames:
 		1:
 			hud.show_telemetry = true
@@ -444,6 +446,16 @@ func _autoshot_step() -> void:
 			lessons.mentor_axes = "all"
 			lessons.start("h_mentor")
 			show_guide = true
+		970:
+			lessons.stop()
+			reset_on_pad()
+			cam_rig.mode = cam_rig.Mode.COCKPIT
+			cam_rig.recenter()
+			show_guide = false
+		1001:
+			cam_rig.toggle_panel_focus()
+		1050:
+			reset_hover()
 		770:
 			var pad: Vector3 = world.terrain.pads["Main helipad"]["pos"]
 			_place(pad + Vector3(-2.0, 1.6 + fdm.cg_height, 0.0), 0.0, 0.0)

@@ -17,6 +17,7 @@ const HELP_GROUPS := [
 	]],
 	["View and sim", [
 		["V", "Cockpit / chase / free camera   right mouse = look around   C recentre"],
+		["Z", "Instrument view: look down and zoom onto the panel (Z again = look outside)"],
 		["Tab", "2D instrument panel     I J K L U O move free camera"],
 		["Esc", "Menu: lessons, aircraft, weather, settings     P pause"],
 		["F2  F3  F4  F5", "Reset on pad / hover 5 m / cruise 80 kt / autorotation at 2,500 ft"],
