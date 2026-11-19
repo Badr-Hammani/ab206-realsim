@@ -21,6 +21,21 @@ var _thr_driving := false
 var _buttons: Array = []   # [rect, label, action]
 var _flash := {}           # action -> time
 
+## Pedal modes for one-hand phone flying (cycled by the PEDALS button, saved in user://touch.cfg):
+##  MANUAL  the bottom slider is the pedals (stays where you leave it)
+##  AUTO    auto pedals hold the heading / keep the ball centred; the slider becomes a turn command
+##          that springs back to the centre (not on the real 206 - a training aid)
+##  TILT    turn the phone like a steering wheel to move the pedals (tap the slider to set the centre)
+const PED_MODES := ["MANUAL", "AUTO", "TILT"]
+const TILT_RANGE_DEG := 25.0
+const TILT_DEADZONE_DEG := 2.0
+const TOUCH_CFG := "user://touch.cfg"
+var ped_mode := 0
+var _tilt_zero := NAN
+var _tilt_val := 0.0
+var _tilt_seen := false
+var _tilt_wait := 0.0
+
 const COL_BG := Color(0.0, 0.0, 0.0, 0.28)
 const COL_EDGE := Color(1.0, 1.0, 1.0, 0.55)
 const COL_FILL := Color(0.45, 0.85, 1.0, 0.55)
@@ -47,6 +62,9 @@ func enable() -> void:
 	_thr_target = controls.throttle
 	main.hud.status.visible = false
 	main.hud.ctrl_view.visible = false
+	var cf := ConfigFile.new()
+	if cf.load(TOUCH_CFG) == OK:
+		set_ped_mode(int(cf.get_value("touch", "ped_mode", 0)), false)
 	main.instructor.force("TOUCH CONTROLS: left strip = collective, bottom slider = pedals, right pad = cyclic. Raise the collective slowly and slide the pedals left as the torque builds. MENU for weather, weight and graphics.")
 
 # ---------------------------------------------------------------- layout
@@ -74,6 +92,7 @@ func _layout_buttons() -> void:
 	var items := [
 		["MENU", "menu"], ["CAMERA", "cam"], ["PANEL", "panel"], ["HELP", "help"],
 		["PAD", "pad"], ["HOVER", "hover"], ["AUTO", "auto"], ["CTR CYC", "center"],
+		["MAP", "map"], ["PIN", "pin"], ["INSTR", "instr"], ["MAP +/-", "mapzoom"],
 	]
 	_buttons.clear()
 	var bw := 118.0
@@ -88,6 +107,7 @@ func _layout_buttons() -> void:
 	# throttle twist-grip button above the pedals
 	var thr_label := "THROTTLE: OPEN" if _thr_target > 0.5 else "THROTTLE: IDLE"
 	_buttons.append([Rect2(190, s.y - 250, 230, 62), thr_label, "throttle"])
+	_buttons.append([Rect2(190, s.y - 352, 230, 62), "PEDALS: " + PED_MODES[ped_mode], "pedmode"])
 
 # ---------------------------------------------------------------- input
 func _input(event: InputEvent) -> void:
@@ -103,6 +123,9 @@ func _input(event: InputEvent) -> void:
 				return
 			if z.begins_with("btn:"):
 				_press_button(z.substr(4))
+			elif z == "pedal" and ped_mode == 2:
+				_tilt_zero = NAN          # tap the slider in TILT mode: the way you hold the phone now is centre
+				main.instructor.force("Tilt pedals centred: hold the phone like this for neutral pedals.")
 			else:
 				_touch_zone[event.index] = z
 				_touch_last[event.index] = p
@@ -120,6 +143,8 @@ func _input(event: InputEvent) -> void:
 			"coll":
 				controls.collective = clampf(controls.collective - d.y / (_coll_rect().size.y * 1.1), 0.0, 1.0)
 			"pedal":
+				if ped_mode == 2:
+					return
 				controls.pedal_trim = clampf(controls.pedal_trim + d.x / (_pedal_rect().size.x * 0.5), -1.0, 1.0)
 			"cyc":
 				var k := 1.0 / (_cyc_radius() * 1.6)
@@ -139,6 +164,74 @@ func _zone_at(p: Vector2) -> String:
 	if p.distance_to(_cyc_center()) < _cyc_radius() * 1.25:
 		return "cyc"
 	return ""
+
+var _map_zoom_step := 0
+
+## Same path as the keyboard so map / pin / instrument view behave exactly like K, Shift+K and Z.
+func _send_key(k: Key, shift: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = k
+	ev.physical_keycode = k
+	ev.shift_pressed = shift
+	ev.pressed = true
+	Input.parse_input_event(ev)
+
+func set_ped_mode(m: int, announce: bool) -> void:
+	ped_mode = clampi(m, 0, PED_MODES.size() - 1)
+	main.assist.auto_pedal = ped_mode == 1
+	_tilt_zero = NAN
+	_tilt_seen = false
+	_tilt_wait = 0.0
+	if ped_mode == 2:
+		_tilt_listen()
+	if ped_mode != 0:
+		controls.pedal_trim = 0.0 if ped_mode == 1 else controls.pedal_trim
+	var cf := ConfigFile.new()
+	cf.load(TOUCH_CFG)
+	cf.set_value("touch", "ped_mode", ped_mode)
+	cf.save(TOUCH_CFG)
+	if announce:
+		main.instructor.force([
+			"Pedals MANUAL: slide the bottom bar. Left pedal as you raise the collective.",
+			"AUTO PEDALS: the computer flies the pedals and holds your heading (not on the real 206). Slide the bottom bar to turn; let go and it holds the new heading.",
+			"TILT PEDALS: turn the phone like a steering wheel for left / right pedal. Tap the pedal bar to set the centre."][ped_mode])
+
+## Browser motion sensor (gravity) -> window.ab206Grav. The web page shell also does this on the Start
+## tap (iPhone needs that tap to grant motion access); this covers other pages (Android needs no tap).
+func _tilt_listen() -> void:
+	if not OS.has_feature("web"):
+		return
+	JavaScriptBridge.eval("""(function(){ if (window.ab206GravOn) return; window.ab206GravOn = true;
+		window.addEventListener('devicemotion', function(e){ var g = e.accelerationIncludingGravity;
+		if (g && g.x !== null) window.ab206Grav = [g.x, g.y, g.z]; }); })()""", true)
+
+func _tilt_update(dt: float) -> void:
+	if not OS.has_feature("web"):
+		return
+	var raw = JavaScriptBridge.eval("window.ab206Grav ? window.ab206Grav.join(',') : ''", true)
+	var parts := str(raw).split(",")
+	if parts.size() < 3:
+		_tilt_wait += dt
+		if _tilt_wait > 3.0 and not _tilt_seen:
+			_tilt_wait = -1000.0
+			main.instructor.force("No tilt sensor data from this browser. On iPhone reload the page and allow Motion when asked after Start. Using the slider meanwhile.")
+		return
+	var gx := float(parts[0])
+	var gy := float(parts[1])
+	if Vector2(gx, gy).length() < 3.0:
+		return                       # phone held flat: the steering angle is not defined, keep the pedals
+	_tilt_seen = true
+	# rotation about the screen normal; the same whichever way the phone is turned (and on iOS, whose
+	# gravity sign is opposite, the difference to the centre is the same)
+	var ang := rad_to_deg(atan2(gx, gy))
+	if is_nan(_tilt_zero):
+		_tilt_zero = ang
+	var d := wrapf(ang - _tilt_zero, -180.0, 180.0)
+	var mag := maxf(absf(d) - TILT_DEADZONE_DEG, 0.0) * signf(d)
+	var target := clampf(-mag / TILT_RANGE_DEG, -1.0, 1.0)      # turn clockwise = right pedal
+	_tilt_val = lerpf(_tilt_val, target, clampf(dt * 12.0, 0.0, 1.0))
+	controls.pedal_trim = _tilt_val
+	controls.pedal_key = 0.0
 
 func _press_button(a: String) -> void:
 	_flash[a] = 0.25
@@ -160,6 +253,22 @@ func _press_button(a: String) -> void:
 			main.reset_autorotation()
 		"center":
 			controls.stick_mouse = Vector2.ZERO
+		"map":
+			_send_key(KEY_K, false)
+		"pin":
+			_send_key(KEY_K, true)
+		"instr":
+			_send_key(KEY_Z, false)
+		"mapzoom":
+			# small map: cycle zoom in until close, then jump back out
+			_map_zoom_step += 1
+			if _map_zoom_step > 3:
+				_map_zoom_step = 0
+				main.nav_map.zoom_small(1.25 * 1.25 * 1.25)
+			else:
+				main.nav_map.zoom_small(0.8)
+		"pedmode":
+			set_ped_mode((ped_mode + 1) % PED_MODES.size(), true)
 		"throttle":
 			_thr_target = 0.0 if _thr_target > 0.5 else 1.0
 			_thr_driving = true
@@ -175,6 +284,11 @@ func _process(dt: float) -> void:
 			_thr_driving = false
 	elif not _thr_driving:
 		_thr_target = 1.0 if controls.throttle > 0.5 else 0.0
+	if not main.paused:
+		if ped_mode == 1 and not _touch_zone.values().has("pedal"):
+			controls.pedal_trim = move_toward(controls.pedal_trim, 0.0, 3.0 * dt)   # turn command springs back
+		elif ped_mode == 2:
+			_tilt_update(dt)
 	for k in _flash.keys():
 		_flash[k] -= dt
 		if _flash[k] <= 0.0:
@@ -210,9 +324,14 @@ func _draw_all() -> void:
 	root.draw_rect(pr, COL_EDGE, false, 2.0)
 	var mid := pr.get_center()
 	root.draw_line(Vector2(mid.x, pr.position.y + 8), Vector2(mid.x, pr.end.y - 8), Color(1, 1, 1, 0.35), 2.0)
-	var px: float = mid.x + controls.pedal * pr.size.x * 0.5
+	var shown: float = main.fdm.pedal if ped_mode == 1 else controls.pedal
+	if ped_mode == 1:
+		var tx: float = mid.x + controls.pedal * pr.size.x * 0.5
+		root.draw_rect(Rect2(tx - 6, pr.position.y + 6, 12, pr.size.y - 12), COL_FILL)   # your turn command
+	var px: float = mid.x + shown * pr.size.x * 0.5
 	root.draw_rect(Rect2(px - 10, pr.position.y + 6, 20, pr.size.y - 12), Color(1, 1, 1, 0.85))
-	_text(Vector2(mid.x, pr.position.y - 10), "PEDALS %+d%%  (left pedal to hover)" % int(round(controls.pedal * 100.0)), 18, COL_TEXT, true)
+	var ptxt: String = ["PEDALS %+d%%  (left pedal to hover)", "AUTO PEDALS %+d%%  (slide to turn)", "TILT PEDALS %+d%%  (tap = centre)"][ped_mode]
+	_text(Vector2(mid.x, pr.position.y - 10), ptxt % int(round(shown * 100.0)), 18, COL_TEXT, true)
 	_text(Vector2(pr.position.x + 10, pr.end.y - 12), "L", 22)
 	_text(Vector2(pr.end.x - 26, pr.end.y - 12), "R", 22)
 	# cyclic

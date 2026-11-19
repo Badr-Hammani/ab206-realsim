@@ -8,7 +8,7 @@ const R := 86.0
 
 var v := {
 	"tq": 0.0, "nr": 100.0, "n2": 100.0, "n1": 62.0, "ias": 0.0, "pitch": 0.0, "roll": 0.0,
-	"alt_ft": 0.0, "vsi": 0.0, "hdg": 0.0, "low_rpm": false, "horn_test": false,
+	"alt_ft": 0.0, "vsi": 0.0, "hdg": 0.0, "low_rpm": false, "horn_test": false, "ball": 0.0,
 }
 var limits := {
 	"nr_on_min": 95.0, "nr_on_max": 100.0, "nr_off_min": 90.0, "nr_off_max": 107.0,
@@ -153,7 +153,21 @@ func _attitude(c: Vector2) -> void:
 	draw_line(c + Vector2(-45, 0), c + Vector2(-15, 0), org, 4)
 	draw_line(c + Vector2(15, 0), c + Vector2(45, 0), org, 4)
 	draw_circle(c, 4, org)
+	_ball(c + Vector2(0, R * 0.66))
 	draw_string(font, c + Vector2(-R, R + 20), "ATTITUDE", HORIZONTAL_ALIGNMENT_CENTER, R * 2, 12, Color(0.85, 0.85, 0.85))
+
+## Slip indicator (inclinometer): black tube, two lubber lines, the ball. One ball width
+## (about 0.06 g here) off centre is a clearly unbalanced flight - "step on the ball".
+func _ball(c: Vector2) -> void:
+	var w := 92.0
+	var h := 16.0
+	var tube := Rect2(c - Vector2(w * 0.5, h * 0.5), Vector2(w, h))
+	draw_rect(tube, Color(0.02, 0.02, 0.02))
+	draw_rect(tube, Color(0.55, 0.55, 0.55), false, 1.0)
+	draw_line(c + Vector2(-9, -h * 0.5), c + Vector2(-9, h * 0.5), Color.WHITE, 2.0)
+	draw_line(c + Vector2(9, -h * 0.5), c + Vector2(9, h * 0.5), Color.WHITE, 2.0)
+	var x := clampf(float(v.get("ball", 0.0)) / 0.06 * 14.0, -w * 0.5 + 7.0, w * 0.5 - 7.0)
+	draw_circle(c + Vector2(x, 0.0), 6.5, Color(0.92, 0.92, 0.92))
 
 func _n1(c: Vector2) -> void:
 	_face(c, "GAS PROD N1 %")

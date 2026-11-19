@@ -1,14 +1,33 @@
 extends Node3D
-## Procedural 4 x 4 km test valley ("Valle Bianca", fictional, realistic elevations
-## 280-1300 m MSL). The same height grid is used for rendering AND for the flight
-## model's skid contact, ground effect and AGL, so what you see is what you hit.
+## Terrain height grid. Two sources:
+##  - procedural 4 x 4 km test valley ("Valle Bianca", fictional, realistic elevations 280-1300 m MSL)
+##  - a real map loaded from data/maps/<id>/ (heights from a DEM + satellite photo), see load_map().
+## The same height grid is used for rendering AND for the flight model's skid contact,
+## ground effect and AGL, so what you see is what you hit.
 
-const SIZE := 4096.0
-const N := 257                 # vertices per side (16 m spacing)
-const CELL := SIZE / float(N - 1)
-const HALF := SIZE * 0.5
+var SIZE := 4096.0
+var N := 257                   # vertices per side (16 m spacing)
+var CELL := SIZE / float(N - 1)
+var HALF := SIZE * 0.5
+var map_dir := ""              # "" = procedural valley, else e.g. "res://data/maps/khouribga"
+var map_meta := {}             # map.json of a real map
+var ortho: ImageTexture        # satellite photo of a real map
+var season := "summer"         # which photo of a real map: "spring" (green fields) or "summer" (dry)
+var photo_material: ShaderMaterial
+var tiles: Array[MeshInstance3D] = []
+const BUCKET := 64.0           # building lookup grid (m)
+var _bld_grid := {}            # Vector2i -> Array of building indices
 
 var heights := PackedFloat32Array()
+## Wide area around a real map (region.json "dem"): 32 m heights for the whole 98 km moving-map
+## region, used outside the detailed 16 km core by the flight model and by outer_terrain.gd.
+var region := {}               # region.json of a real map
+var outer := PackedByteArray() # 2 bytes per point (high, low), units of OSCALE m; row j = z index
+var ON := 0
+var OCELL := 32.0
+var OHALF := 0.0
+var OSCALE := 0.25
+var outer_terrain              # outer_terrain.gd
 var buildings: Array = []      # each: {"min": Vector3, "max": Vector3}
 var pads := {}                 # name -> {"pos": Vector3, "radius": float, "heading": float}
 var mesh_instance: MeshInstance3D
@@ -42,7 +61,224 @@ func _raw_height(x: float, z: float) -> float:
 	var edge := smoothstep(1450.0, 2048.0, maxf(absf(x), absf(z))) * 420.0
 	return floor_h + mountain + edge
 
+## Loads a real map: height.bin (uint16 * height_scale m, row = z index from north), map.json, photo.
+func load_map(dir: String) -> bool:
+	var js := FileAccess.get_file_as_string(dir + "/map.json")
+	var meta = JSON.parse_string(js)
+	if typeof(meta) != TYPE_DICTIONARY:
+		push_error("map.json missing in " + dir)
+		return false
+	map_meta = meta
+	map_dir = dir
+	SIZE = float(meta["size_m"])
+	N = int(meta["n"])
+	CELL = SIZE / float(N - 1)
+	HALF = SIZE * 0.5
+	var raw := FileAccess.get_file_as_bytes(dir + "/height.bin")
+	var sc := float(meta["height_scale"])
+	heights.resize(N * N)
+	for k in N * N:
+		heights[k] = raw.decode_u16(k * 2) * sc
+	ortho = _load_photo(season)
+	_load_region()
+	var pd: Dictionary = meta["pads"]
+	for pad_name in pd:
+		var a: Array = pd[pad_name]
+		_add_pad(pad_name, Vector3(a[0], 0.0, a[1]), a[2], 30.0 if a[2] > 12.0 else 18.0, 0.0)
+	_build_tiled_mesh()
+	if ON > 0:
+		outer_terrain = load("res://scripts/world/outer_terrain.gd").new()
+		outer_terrain.name = "OuterTerrain"
+		outer_terrain.terrain = self
+		add_child(outer_terrain)
+		outer_terrain.build()
+	return true
+
+func _load_region() -> void:
+	var f := map_dir + "/region.json"
+	if not FileAccess.file_exists(f):
+		return
+	var r = JSON.parse_string(FileAccess.get_file_as_string(f))
+	if typeof(r) != TYPE_DICTIONARY:
+		return
+	region = r
+	var d: Dictionary = r.get("dem", {})
+	if d.is_empty():
+		return
+	var img := Image.new()
+	if img.load_png_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + str(d["file"]))) != OK or img.get_format() != Image.FORMAT_LA8:
+		push_warning("region DEM could not be read")
+		return
+	outer = img.get_data()
+	ON = int(d["n"])
+	OCELL = float(d["cell"])
+	OSCALE = float(d["scale"])
+	OHALF = OCELL * (ON - 1) * 0.5
+
+## Region photo (the moving map's wide photo) for the outer terrain.
+func region_photo(s: String) -> ImageTexture:
+	var photos: Dictionary = region.get("photos", {})
+	var f: String = photos.get(s, photos.values()[0] if photos.size() > 0 else "")
+	var img := Image.new()
+	if f == "" or img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + f)) != OK:
+		return null
+	# 3072 px = 32 m per pixel, the DEM's own spacing (the live HD photo covers the close range);
+	# the full 6144 px photo would need ~150 MB of video memory with mipmaps.
+	if img.get_width() > 3072:
+		img.resize(3072, 3072, Image.INTERPOLATE_BILINEAR)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+func outer_point(i: int, j: int) -> float:
+	var k := (clampi(j, 0, ON - 1) * ON + clampi(i, 0, ON - 1)) * 2
+	return float((outer[k] << 8) | outer[k + 1]) * OSCALE
+
+func _outer_height(x: float, z: float) -> float:
+	var gx := clampf((x + OHALF) / OCELL, 0.0, ON - 1.001)
+	var gz := clampf((z + OHALF) / OCELL, 0.0, ON - 1.001)
+	var i := int(gx)
+	var j := int(gz)
+	var fx := gx - i
+	var fz := gz - j
+	var h00 := outer_point(i, j)
+	var h10 := outer_point(i + 1, j)
+	var h01 := outer_point(i, j + 1)
+	var h11 := outer_point(i + 1, j + 1)
+	if fx >= fz:
+		return h00 + (h10 - h00) * fx + (h11 - h10) * fz
+	return h00 + (h11 - h01) * fx + (h01 - h00) * fz
+
+func _load_photo(s: String) -> ImageTexture:
+	var photos: Dictionary = map_meta.get("photos", {})
+	var f: String = photos.get(s, photos.values()[0] if photos.size() > 0 else "")
+	var img := Image.new()
+	if f == "" or img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + f)) != OK:
+		return null
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+## Swap the satellite photo (real maps only) without reloading.
+func set_season(s: String) -> void:
+	season = s
+	if map_dir == "" or photo_material == null:
+		return
+	var t := _load_photo(s)
+	if t:
+		ortho = t
+		photo_material.set_shader_parameter("photo", t)
+	if outer_terrain:
+		outer_terrain.set_photo(region_photo(s))
+
+## Brightness of the draped satellite photos (they are display-stretched). The web / compatibility
+## renderer clips them to white on the pale plateau at 1.0; the PC renderer handles more.
+static func photo_gain() -> float:
+	return 0.58 if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 0.8
+
+## Draw distances (m) of the three terrain detail levels: 16 m grid near, 32 m, 64 m far.
+## Ranges are measured to the 2 km tile centre, so the near level must reach past ~1.45 km.
+const LOD_RANGES := [2000.0, 5000.0]
+const LOD_RANGES_PRESET := [[1500.0, 4000.0], [2000.0, 5000.0], [2500.0, 6500.0], [3500.0, 9000.0]]
+
+## Terrain detail levels per graphics preset (0 Low, 1 Medium, 2 High, 3 Ultra).
+func set_lod_preset(p: int) -> void:
+	var r: Array = LOD_RANGES_PRESET[clampi(p, 0, LOD_RANGES_PRESET.size() - 1)]
+	for k in tiles.size():
+		var li := k % 3
+		var mi := tiles[k]
+		mi.visibility_range_begin = 0.0 if li == 0 else float(r[li - 1])
+		mi.visibility_range_end = float(r[li]) if li < 2 else 0.0
+
+## Real maps: the grid is cut into 2 km tiles, each with three detail levels that Godot swaps
+## by distance (visibility ranges). Skirts hide the small cracks where two levels meet.
+func _build_tiled_mesh() -> void:
+	var norms := PackedVector3Array()
+	norms.resize(N * N)
+	for j in N:
+		var jd := maxi(j - 1, 0)
+		var ju := mini(j + 1, N - 1)
+		for i in N:
+			var il := maxi(i - 1, 0)
+			var ir := mini(i + 1, N - 1)
+			var hx := heights[j * N + ir] - heights[j * N + il]
+			var hz := heights[ju * N + i] - heights[jd * N + i]
+			norms[j * N + i] = Vector3(-hx / ((ir - il) * CELL), 1.0, -hz / ((ju - jd) * CELL)).normalized()
+	photo_material = ShaderMaterial.new()
+	photo_material.shader = load("res://shaders/terrain_photo.gdshader")
+	photo_material.set_shader_parameter("photo", ortho)
+	photo_material.set_shader_parameter("map_size", SIZE)
+	photo_material.set_shader_parameter("photo_gain", photo_gain())
+	var T := 128
+	var nt := (N - 1) / T
+	for ty in nt:
+		for tx in nt:
+			var lods := [1, 2, 4]
+			for li in lods.size():
+				var mi := _tile_mesh(tx * T, ty * T, T, lods[li], norms)
+				mi.visibility_range_begin = 0.0 if li == 0 else LOD_RANGES[li - 1]
+				mi.visibility_range_end = LOD_RANGES[li] if li < 2 else 0.0
+				mi.material_override = photo_material
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				add_child(mi)
+				tiles.append(mi)
+	mesh_instance = tiles[0]
+	_build_far_plane()
+
+func _tile_mesh(i0: int, j0: int, T: int, step: int, norms: PackedVector3Array) -> MeshInstance3D:
+	var n := T / step + 1
+	var cx := -HALF + (i0 + T * 0.5) * CELL
+	var cz := -HALF + (j0 + T * 0.5) * CELL
+	var verts := PackedVector3Array()
+	var nrm := PackedVector3Array()
+	var idx := PackedInt32Array()
+	verts.resize(n * n)
+	nrm.resize(n * n)
+	for b in n:
+		var j := j0 + b * step
+		for a in n:
+			var i := i0 + a * step
+			verts[b * n + a] = Vector3(-HALF + i * CELL - cx, heights[j * N + i], -HALF + j * CELL - cz)
+			nrm[b * n + a] = norms[j * N + i]
+	for b in n - 1:
+		for a in n - 1:
+			var p := b * n + a
+			idx.append_array([p, p + 1, p + n + 1, p, p + n + 1, p + n])
+	# skirts: hang each border 6 m down so a coarser neighbour never shows a gap
+	var border: Array[int] = []
+	for a in n:
+		border.append(a)
+	for b in range(1, n):
+		border.append(b * n + n - 1)
+	for a in range(n - 2, -1, -1):
+		border.append((n - 1) * n + a)
+	for b in range(n - 2, -1, -1):
+		border.append(b * n)
+	var base := verts.size()
+	for k in border.size():
+		verts.append(verts[border[k]] - Vector3(0, 6.0 * step, 0))
+		nrm.append(nrm[border[k]])
+	for k in border.size():
+		var k2 := (k + 1) % border.size()
+		var a0: int = border[k]
+		var a1: int = border[k2]
+		var d0 := base + k
+		var d1 := base + k2
+		idx.append_array([a0, d0, a1, a1, d0, d1, a0, a1, d0, a1, d1, d0])   # both sides
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = nrm
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = Vector3(cx, 0.0, cz)
+	return mi
+
 func generate() -> void:
+	if map_dir != "":
+		load_map(map_dir)
+		return
 	heights.resize(N * N)
 	for j in N:
 		var z := -HALF + j * CELL
@@ -85,6 +321,8 @@ func height_at_raw_grid(x: float, z: float) -> float:
 	return _grid_height(x, z)
 
 func _grid_height(x: float, z: float) -> float:
+	if ON > 0 and (absf(x) > HALF or absf(z) > HALF):
+		return _outer_height(x, z)
 	var gx := clampf((x + HALF) / CELL, 0.0, N - 1.001)
 	var gz := clampf((z + HALF) / CELL, 0.0, N - 1.001)
 	var i := int(gx)
@@ -103,7 +341,11 @@ func _grid_height(x: float, z: float) -> float:
 ## Ground height used by the flight model (terrain plus building roofs).
 func height_at(x: float, z: float) -> float:
 	var h := _grid_height(x, z)
-	for b in buildings:
+	var cell = _bld_grid.get(Vector2i(floori(x / BUCKET), floori(z / BUCKET)))
+	if cell == null:
+		return h
+	for k in cell:
+		var b: Dictionary = buildings[k]
 		var mn: Vector3 = b["min"]
 		var mx: Vector3 = b["max"]
 		if x >= mn.x and x <= mx.x and z >= mn.z and z <= mx.z:
@@ -117,7 +359,17 @@ func normal_at(x: float, z: float) -> Vector3:
 	return Vector3(-hx, 2.0 * e, -hz).normalized()
 
 func add_building(center: Vector3, size: Vector3) -> void:
-	buildings.append({"min": center - Vector3(size.x, 0.0, size.z) * 0.5, "max": center + Vector3(size.x * 0.5, size.y, size.z * 0.5)})
+	var b := {"min": center - Vector3(size.x, 0.0, size.z) * 0.5, "max": center + Vector3(size.x * 0.5, size.y, size.z * 0.5)}
+	buildings.append(b)
+	var k := buildings.size() - 1
+	var mn: Vector3 = b["min"]
+	var mx: Vector3 = b["max"]
+	for gx in range(floori(mn.x / BUCKET), floori(mx.x / BUCKET) + 1):
+		for gz in range(floori(mn.z / BUCKET), floori(mx.z / BUCKET) + 1):
+			var key := Vector2i(gx, gz)
+			if not _bld_grid.has(key):
+				_bld_grid[key] = []
+			_bld_grid[key].append(k)
 
 func _build_mesh() -> void:
 	var verts := PackedVector3Array()
@@ -157,23 +409,44 @@ func _build_mesh() -> void:
 	mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = mesh
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/terrain.gdshader")
+	if ortho:
+		mat.shader = load("res://shaders/terrain_photo.gdshader")
+		mat.set_shader_parameter("photo", ortho)
+		mat.set_shader_parameter("map_size", SIZE)
+	else:
+		mat.shader = load("res://shaders/terrain.gdshader")
 	mesh_instance.material_override = mat
 	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mesh_instance)
+	_build_far_plane()
+
+func _build_far_plane() -> void:
 	# far ground ring so the horizon never shows a void
 	var far := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(40000, 40000)
 	far.mesh = pm
-	far.position = Vector3(0, 240.0, 0)
+	var hmin := 240.0
+	if ortho:
+		hmin = 1e9
+		for v in heights:
+			hmin = minf(hmin, v)
+		if ON > 0:
+			hmin = minf(hmin, 200.0)    # wide area reaches down to ~215 m in the valleys
+			pm.size = Vector2(300000, 300000)
+		hmin -= 3.0
+	far.position = Vector3(0, hmin, 0)
 	var fm := StandardMaterial3D.new()
-	fm.albedo_color = Color(0.36, 0.40, 0.33)
+	fm.albedo_color = Color(0.60, 0.50, 0.39) if ortho else Color(0.36, 0.40, 0.33)
 	fm.roughness = 1.0
 	far.material_override = fm
 	far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(far)
 
 func set_detail(level: int) -> void:
-	if mesh_instance and mesh_instance.material_override:
+	if outer_terrain:
+		outer_terrain.set_detail(level)
+	if photo_material:
+		photo_material.set_shader_parameter("detail", level)
+	elif mesh_instance and mesh_instance.material_override:
 		(mesh_instance.material_override as ShaderMaterial).set_shader_parameter("detail", level)

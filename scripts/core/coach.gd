@@ -15,6 +15,7 @@ var enabled := true
 var ctx := {}
 var faults := {}               # fault key -> count (for the debrief)
 var stable_time := 0.0
+var quiet := false             # true: the lesson gives its own cues (the automatic hover cues stay silent)
 
 var _gap := 0.0                # global quiet time between cues
 var _hist: Array = []          # recent [t, lon, lat, coll, ped, p, q, r]
@@ -35,6 +36,7 @@ const CONCEPT := {
 }
 
 func reset() -> void:
+	quiet = false
 	faults = {}
 	stable_time = 0.0
 	_gap = 0.0
@@ -128,7 +130,7 @@ func update(dt: float, f, s_lon: float, s_lat: float, s_coll: float, s_ped: floa
 	if f.on_ground and not _prev_ground:
 		_td_time = _t
 	_prev_ground = f.on_ground
-	if phase == "approach" or phase == "off":
+	if phase == "approach" or phase == "off" or quiet:
 		return
 	if not low_hover and not (f.on_ground and _td_time >= 0.0):
 		stable_time = 0.0

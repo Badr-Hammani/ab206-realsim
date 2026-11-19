@@ -403,9 +403,20 @@ func _build_fly() -> void:
 		_tile(grid, "■", "Stop lesson", main.lessons.lesson_title().substr(0, 26), "lesson_stop")
 	else:
 		_tile(grid, "★", "Lessons", "Hover, take-off, landing", "tab_lessons")
+	_map_card()
 	_assist_card()
 	var c := _card("Aircraft")
 	_slider_row(c, "Gross weight  (max 1,451 kg)", 850.0, 1451.0, 5.0, main.fdm.mass, "%.0f kg", func(v: float) -> void: main.set_weight(v))
+
+## Map picker (Fly tab). Changing it reloads the sim on the new map's main helipad.
+func _map_card() -> void:
+	var ids: Array = main.world.MAPS.keys()
+	var names: Array = []
+	for k in ids:
+		names.append("Training valley" if k == "valle" else "Khouribga GMMK")
+	var c := _card("Map", "Khouribga: real terrain (Copernicus DEM) and satellite photo; runway, taxiways and helipad from OpenStreetMap. Houses are placed from land-cover data (estimated shapes).")
+	c.add_child(_segmented(names, ids.find(main.world.map_id), func(i: int) -> void:
+		main.set_map(ids[i]), 160))
 
 const ASSIST_ITEMS := ["Off", "1  Damping", "2  Attitude", "3  Hover hold"]
 const ASSIST_DESC := ["The real 206: nothing holds it for you.", "Wobbles damped - you still find the stick position.", "Stick sets the attitude; centre it and it levels itself.", "Stick sets ground speed; centre it and it stops and holds the spot."]
@@ -440,7 +451,7 @@ func _build_lessons() -> void:
 	ac.add_child(_segmented(ASSIST_ITEMS, main.assist.level, func(i: int) -> void:
 		main.set_assist(i)
 		build()))
-	for gi in Lessons.GROUPS.size():
+	for gi in Lessons.GROUP_ORDER:
 		var c := _card(Lessons.GROUPS[gi])
 		for l in Lessons.LIST:
 			if int(l[3]) != gi:
@@ -482,6 +493,12 @@ func _build_weather() -> void:
 	var a := _card("Air")
 	_slider_row(a, "Temperature  (ISA ±)", -30.0, 30.0, 1.0, f.atmo.temp_offset_c, "%+.0f °C", func(v: float) -> void: f.atmo.temp_offset_c = v)
 	_slider_row(a, "Visibility", 1500.0, 20000.0, 500.0, main.visibility_m, "%.0f m", func(v: float) -> void: main.set_visibility(v))
+	if main.world.map_id != "valle":
+		var sc := _card("Season", "Real satellite photos: spring = March-April 2025 (green crops), summer = July-August 2025 (dry, harvested).")
+		var items := ["spring", "summer"]
+		_row(sc, "Ground photo", "", _segmented(["Spring", "Summer"], items.find(main.world.season), func(i: int) -> void:
+			main.set_season(items[i])
+			build(), 90))
 
 func _build_settings() -> void:
 	var t := _card("Training display and instructor")
@@ -501,9 +518,15 @@ func _build_settings() -> void:
 	pb.pressed.connect(func() -> void: action.emit("phone"))
 	_row(c, "Phone controller  (F10)", "Tilt a phone as the cyclic or collective", pb)
 	var g := _card("Graphics and sound")
-	_row(g, "Graphics quality  (F7)", "Low is best on integrated graphics", _segmented(["Low", "Medium", "High"], main.preset, func(i: int) -> void:
+	_row(g, "Graphics quality  (F7)", "Low for integrated graphics, Ultra for strong phones (iPhone 15/16) and gaming PCs", _segmented(["Low", "Medium", "High", "Ultra"], main.preset, func(i: int) -> void:
+		main._auto_q_off = true
 		main.apply_preset(i)
-		build(), 80))
+		build(), 70))
+	var hg = main.world.hd_ground
+	if hg != null:
+		_switch(g, "Live HD ground photo", "Real ~1 m aerial photo streamed around you (needs internet, Medium or higher). Now: " + hg.describe(), hg.enabled, func(b: bool) -> void:
+			hg.set_enabled(b)
+			main._save_settings())
 	_slider_row(g, "Sound volume", 0.0, 1.0, 0.05, main.audio.master_volume, "%.2f", func(v: float) -> void: main.audio.master_volume = v)
 	var q := _card("", "Educational simulation only. Not an approved training device. Always follow your instructor and the approved Rotorcraft Flight Manual.")
 	var qb := _pill("Quit", false, true)
