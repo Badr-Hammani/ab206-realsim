@@ -327,7 +327,55 @@ func _refresh_info() -> void:
 		name_edit.text = str(pins[target]["name"]) if target >= 0 and target < pins.size() else ""
 
 # ------------------------------------------------------------------ big map input
+## Two-finger pinch (zoom) and drag (move) on a touch screen. While two fingers are down, the mouse
+## events the system emulates from the first finger are ignored, and so is the click when they lift.
+var _touches := {}             # finger index -> position
+var _pinch_d := 0.0
+var _pinch_mid := Vector2.ZERO
+var _pinched := false
+
+func _pinch_input(ev: InputEvent) -> bool:
+	if ev is InputEventScreenTouch:
+		var st := ev as InputEventScreenTouch
+		if st.pressed:
+			_touches[st.index] = st.position
+		else:
+			_touches.erase(st.index)
+		if _touches.size() == 2:
+			var p: Array = _touches.values()
+			_pinch_d = (p[0] as Vector2).distance_to(p[1])
+			_pinch_mid = ((p[0] as Vector2) + (p[1] as Vector2)) * 0.5
+			_pinched = true
+			_dragging = true          # no click when the fingers lift
+		elif _touches.is_empty() and _pinched:
+			_pinched = false
+			return true
+		return _touches.size() >= 2
+	if ev is InputEventScreenDrag:
+		var sd := ev as InputEventScreenDrag
+		if not _touches.has(sd.index):
+			_touches[sd.index] = sd.position
+		_touches[sd.index] = sd.position
+		if _touches.size() == 2:
+			var p: Array = _touches.values()
+			var d := (p[0] as Vector2).distance_to(p[1])
+			var mid := ((p[0] as Vector2) + (p[1] as Vector2)) * 0.5
+			follow = false
+			big_centre -= (mid - _pinch_mid) * big_mpp
+			if _pinch_d > 10.0 and d > 10.0:
+				_zoom_at(mid, _pinch_d / d)
+			_pinch_d = d
+			_pinch_mid = mid
+			big_view.queue_redraw()
+			return true
+		return false
+	# emulated mouse events while two fingers (or right after a pinch) are ignored
+	return _pinched and (ev is InputEventMouseButton or ev is InputEventMouseMotion)
+
 func _big_input(ev: InputEvent) -> void:
+	if _pinch_input(ev):
+		big_view.accept_event()
+		return
 	if ev is InputEventMouseButton:
 		var mb := ev as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:

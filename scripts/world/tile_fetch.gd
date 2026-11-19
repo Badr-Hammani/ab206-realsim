@@ -43,7 +43,9 @@ const JS := """
 func _ready() -> void:
 	web = OS.has_feature("web")
 	if web:
-		_js_ok = JavaScriptBridge.eval(JS, true) == true
+		JavaScriptBridge.eval(JS, true)
+		_js_ok = JavaScriptBridge.get_interface("ab206hd") != null
+		print("HD tiles: browser image loader %s" % ("ready" if _js_ok else "NOT available"))
 		return
 	for i in 8:
 		var r := HTTPRequest.new()

@@ -19,6 +19,15 @@ const BUCKET := 64.0           # building lookup grid (m)
 var _bld_grid := {}            # Vector2i -> Array of building indices
 
 var heights := PackedFloat32Array()
+## Wide area around a real map (region.json "dem"): 32 m heights for the whole 98 km moving-map
+## region, used outside the detailed 16 km core by the flight model and by outer_terrain.gd.
+var region := {}               # region.json of a real map
+var outer := PackedByteArray() # 2 bytes per point (high, low), units of OSCALE m; row j = z index
+var ON := 0
+var OCELL := 32.0
+var OHALF := 0.0
+var OSCALE := 0.25
+var outer_terrain              # outer_terrain.gd
 var buildings: Array = []      # each: {"min": Vector3, "max": Vector3}
 var pads := {}                 # name -> {"pos": Vector3, "radius": float, "heading": float}
 var mesh_instance: MeshInstance3D
@@ -71,12 +80,69 @@ func load_map(dir: String) -> bool:
 	for k in N * N:
 		heights[k] = raw.decode_u16(k * 2) * sc
 	ortho = _load_photo(season)
+	_load_region()
 	var pd: Dictionary = meta["pads"]
 	for pad_name in pd:
 		var a: Array = pd[pad_name]
 		_add_pad(pad_name, Vector3(a[0], 0.0, a[1]), a[2], 30.0 if a[2] > 12.0 else 18.0, 0.0)
 	_build_tiled_mesh()
+	if ON > 0:
+		outer_terrain = load("res://scripts/world/outer_terrain.gd").new()
+		outer_terrain.name = "OuterTerrain"
+		outer_terrain.terrain = self
+		add_child(outer_terrain)
+		outer_terrain.build()
 	return true
+
+func _load_region() -> void:
+	var f := map_dir + "/region.json"
+	if not FileAccess.file_exists(f):
+		return
+	var r = JSON.parse_string(FileAccess.get_file_as_string(f))
+	if typeof(r) != TYPE_DICTIONARY:
+		return
+	region = r
+	var d: Dictionary = r.get("dem", {})
+	if d.is_empty():
+		return
+	var img := Image.new()
+	if img.load_png_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + str(d["file"]))) != OK or img.get_format() != Image.FORMAT_LA8:
+		push_warning("region DEM could not be read")
+		return
+	outer = img.get_data()
+	ON = int(d["n"])
+	OCELL = float(d["cell"])
+	OSCALE = float(d["scale"])
+	OHALF = OCELL * (ON - 1) * 0.5
+
+## Region photo (the moving map's wide photo) for the outer terrain.
+func region_photo(s: String) -> ImageTexture:
+	var photos: Dictionary = region.get("photos", {})
+	var f: String = photos.get(s, photos.values()[0] if photos.size() > 0 else "")
+	var img := Image.new()
+	if f == "" or img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + f)) != OK:
+		return null
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+func outer_point(i: int, j: int) -> float:
+	var k := (clampi(j, 0, ON - 1) * ON + clampi(i, 0, ON - 1)) * 2
+	return float((outer[k] << 8) | outer[k + 1]) * OSCALE
+
+func _outer_height(x: float, z: float) -> float:
+	var gx := clampf((x + OHALF) / OCELL, 0.0, ON - 1.001)
+	var gz := clampf((z + OHALF) / OCELL, 0.0, ON - 1.001)
+	var i := int(gx)
+	var j := int(gz)
+	var fx := gx - i
+	var fz := gz - j
+	var h00 := outer_point(i, j)
+	var h10 := outer_point(i + 1, j)
+	var h01 := outer_point(i, j + 1)
+	var h11 := outer_point(i + 1, j + 1)
+	if fx >= fz:
+		return h00 + (h10 - h00) * fx + (h11 - h10) * fz
+	return h00 + (h11 - h01) * fx + (h01 - h00) * fz
 
 func _load_photo(s: String) -> ImageTexture:
 	var photos: Dictionary = map_meta.get("photos", {})
@@ -96,6 +162,8 @@ func set_season(s: String) -> void:
 	if t:
 		ortho = t
 		photo_material.set_shader_parameter("photo", t)
+	if outer_terrain:
+		outer_terrain.set_photo(region_photo(s))
 
 ## Draw distances (m) of the three terrain detail levels: 16 m grid near, 32 m, 64 m far.
 ## Ranges are measured to the 2 km tile centre, so the near level must reach past ~1.45 km.
@@ -243,6 +311,8 @@ func height_at_raw_grid(x: float, z: float) -> float:
 	return _grid_height(x, z)
 
 func _grid_height(x: float, z: float) -> float:
+	if ON > 0 and (absf(x) > HALF or absf(z) > HALF):
+		return _outer_height(x, z)
 	var gx := clampf((x + HALF) / CELL, 0.0, N - 1.001)
 	var gz := clampf((z + HALF) / CELL, 0.0, N - 1.001)
 	var i := int(gx)
@@ -351,6 +421,9 @@ func _build_far_plane() -> void:
 		hmin = 1e9
 		for v in heights:
 			hmin = minf(hmin, v)
+		if ON > 0:
+			hmin = minf(hmin, 200.0)    # wide area reaches down to ~215 m in the valleys
+			pm.size = Vector2(300000, 300000)
 		hmin -= 3.0
 	far.position = Vector3(0, hmin, 0)
 	var fm := StandardMaterial3D.new()
@@ -361,6 +434,8 @@ func _build_far_plane() -> void:
 	add_child(far)
 
 func set_detail(level: int) -> void:
+	if outer_terrain:
+		outer_terrain.set_detail(level)
 	if photo_material:
 		photo_material.set_shader_parameter("detail", level)
 	elif mesh_instance and mesh_instance.material_override:

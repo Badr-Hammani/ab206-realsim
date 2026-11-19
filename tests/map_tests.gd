@@ -139,6 +139,25 @@ func _run() -> void:
 	var on: float = t.photo_material.get_shader_parameter("hd_on")
 	check("[M12] HD ground photo streams onto the 3D terrain", hg.status == "live" and on > 0.5 and Ln["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and fit_m < 1.0 and Ln["w"] == 12, "%s; near %d / far %d tiles, tile %.0f m, affine fit error %.2f m at 1.1 km" % [hg.describe(), Ln["slots"].size(), hg.levels[1]["slots"].size(), Ln["tile_m"], fit_m])
 	main.apply_preset(1)
+	# wide-area 3D terrain (98 km, Copernicus 32 m): mine pit 15.5 km E / 10.9 km S, seams at the core edge
+	var ot = t.outer_terrain
+	var pit: float = t.height_at(15520.0, 10880.0)
+	var rim: float = t.height_at(15520.0 - 320.0, 10880.0)
+	var seam := 0.0
+	for k in 41:
+		var e: float = -t.HALF + k * 409.6
+		seam = maxf(seam, absf(t._grid_height(t.HALF + 0.01, e) - t._grid_height(t.HALF - 0.01, e)))
+	var cam3: Camera3D = main.get_viewport().get_camera_3d()
+	var keep_cam := cam3.global_transform
+	cam3.global_position = Vector3(15520.0, pit + 300.0, 10880.0)
+	for i in 120:
+		await process_frame
+	var fine := 0
+	for k in ot.tiles:
+		if int(ot.tiles[k]["step"]) == 1:
+			fine += 1
+	cam3.global_transform = keep_cam
+	check("[M13] wide 3D terrain: mine pits east of Khouribga, no seams at the core", t.ON == 3073 and absf(pit - 666.8) < 2.0 and rim - pit > 25.0 and seam < 3.0 and ot.chunks.size() > 100 and fine >= 4, "pit %.1f m (rim %.1f m higher), core/outer step at edge max %.2f m, %d chunks, %d fine tiles near the pit" % [pit, rim - pit, seam, ot.chunks.size(), fine])
 	var s0: String = w.season
 	main.set_season("spring")
 	var tex_sp = t.ortho

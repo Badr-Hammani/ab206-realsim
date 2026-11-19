@@ -66,14 +66,13 @@ func set_draw_preset(p: int) -> void:
 		terrain.set_lod_preset(p)
 	if hd_ground:
 		hd_ground.set_profile(p)
+	if terrain and terrain.outer_terrain:
+		terrain.outer_terrain.set_profile(p)
 
 ## Live HD ground photo: needs the region projection (region.json) of the real map.
 func _setup_hd_ground() -> void:
-	var f: String = terrain.map_dir + "/region.json"
-	if not FileAccess.file_exists(f):
-		return
-	var r = JSON.parse_string(FileAccess.get_file_as_string(f))
-	if typeof(r) != TYPE_DICTIONARY:
+	var r: Dictionary = terrain.region
+	if r.is_empty():
 		return
 	hd_ground = HdGround.new()
 	hd_ground.name = "HdGround"
@@ -82,6 +81,8 @@ func _setup_hd_ground() -> void:
 		return
 	add_child(hd_ground)
 	hd_ground.add_material(terrain.photo_material)
+	if terrain.outer_terrain:
+		hd_ground.add_material(terrain.outer_terrain.material)
 	if real_map.area_material:
 		hd_ground.add_material(real_map.area_material)
 	for m in real_map.road_materials:
