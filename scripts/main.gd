@@ -69,7 +69,7 @@ func _ready() -> void:
 	world = World.new()
 	world.name = "World"
 	add_child(world)
-	world.build()
+	world.build(_startup_map())
 	fdm.ground = world.terrain
 	refs = HoverRefs.new()
 	refs.name = "HoverRefs"
@@ -209,7 +209,10 @@ func reset_hover() -> void:
 func reset_cruise() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
 	_place(p + Vector3(0, 300.0 + fdm.cg_height, 1500.0), 0.0, 80.0)
-	instructor.force("CRUISE 80 kt at about 1,000 ft above the valley floor, heading north up the valley. The main pad is straight ahead, 1.5 km.")
+	if world.map_id == "khouribga":
+		instructor.force("CRUISE 80 kt at about 1,000 ft above the Khouribga plateau, heading north. The helipad on the main apron is straight ahead, 1.5 km; runway 05/23 is on your right and the city to the north-east.")
+	else:
+		instructor.force("CRUISE 80 kt at about 1,000 ft above the valley floor, heading north up the valley. The main pad is straight ahead, 1.5 km.")
 
 func reset_autorotation() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
@@ -234,6 +237,36 @@ func set_sim_speed(v: float) -> void:
 func set_weight(kg: float) -> void:
 	fdm.set_mass(kg)
 
+## Map chosen at start-up: command line --map=<id> wins, else the saved setting.
+var map_override := ""            # tests set this before adding the scene
+static var _cmdline_map_used := false   # --map= only applies to the first start, not after a map switch
+
+func _startup_map() -> String:
+	if map_override != "":
+		return map_override
+	if not _cmdline_map_used:
+		_cmdline_map_used = true
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--map="):
+				return a.substr(6)
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) == OK:
+		return str(cf.get_value("world", "map", "valle"))
+	return "valle"
+
+## Switch map: saves the choice and rebuilds the whole scene (about 2-4 s on the real map).
+func set_map(id: String) -> void:
+	if id == world.map_id:
+		return
+	world.map_id = id
+	_save_settings()
+	controls.save_config()
+	phone.save_config()
+	phone.stop()
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	get_tree().reload_current_scene()
+
 func set_visibility(m: float) -> void:
 	visibility_m = m
 	world.set_visibility(m)
@@ -248,6 +281,7 @@ func apply_preset(i: int) -> void:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			world.sun.shadow_enabled = false
 			world.set_tree_count(1500)
+			world.set_building_share(0.3)
 			world.terrain.set_detail(0)
 			cam_rig.cam.far = 7000.0
 		1:
@@ -257,6 +291,7 @@ func apply_preset(i: int) -> void:
 			world.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 			world.sun.directional_shadow_max_distance = 150.0
 			world.set_tree_count(4500)
+			world.set_building_share(0.65)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 10000.0
 		2:
@@ -266,6 +301,7 @@ func apply_preset(i: int) -> void:
 			world.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 			world.sun.directional_shadow_max_distance = 500.0
 			world.set_tree_count(9000)
+			world.set_building_share(1.0)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 12000.0
 	_save_settings()
@@ -670,6 +706,7 @@ func _save_settings() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("graphics", "preset", preset)
 	cf.set_value("world", "visibility", visibility_m)
+	cf.set_value("world", "map", world.map_id if world else "valle")
 	if fdm:
 		cf.set_value("aircraft", "mass", fdm.mass)
 		cf.set_value("weather", "wind_from", fdm.atmo.wind_from_deg)

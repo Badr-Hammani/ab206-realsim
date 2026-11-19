@@ -403,9 +403,20 @@ func _build_fly() -> void:
 		_tile(grid, "■", "Stop lesson", main.lessons.lesson_title().substr(0, 26), "lesson_stop")
 	else:
 		_tile(grid, "★", "Lessons", "Hover, take-off, landing", "tab_lessons")
+	_map_card()
 	_assist_card()
 	var c := _card("Aircraft")
 	_slider_row(c, "Gross weight  (max 1,451 kg)", 850.0, 1451.0, 5.0, main.fdm.mass, "%.0f kg", func(v: float) -> void: main.set_weight(v))
+
+## Map picker (Fly tab). Changing it reloads the sim on the new map's main helipad.
+func _map_card() -> void:
+	var ids: Array = main.world.MAPS.keys()
+	var names: Array = []
+	for k in ids:
+		names.append("Training valley" if k == "valle" else "Khouribga GMMK")
+	var c := _card("Map", "Khouribga: real terrain (Copernicus DEM) and satellite photo; runway, taxiways and helipad from OpenStreetMap. Houses are placed from land-cover data (estimated shapes).")
+	c.add_child(_segmented(names, ids.find(main.world.map_id), func(i: int) -> void:
+		main.set_map(ids[i]), 160))
 
 const ASSIST_ITEMS := ["Off", "1  Damping", "2  Attitude", "3  Hover hold"]
 const ASSIST_DESC := ["The real 206: nothing holds it for you.", "Wobbles damped - you still find the stick position.", "Stick sets the attitude; centre it and it levels itself.", "Stick sets ground speed; centre it and it stops and holds the spot."]

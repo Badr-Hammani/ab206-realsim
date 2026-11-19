@@ -2,6 +2,8 @@ extends Node3D
 ## Builds the environment: sky, sun, fog, terrain, helipads, windsocks, trees, buildings.
 
 const Terrain = preload("res://scripts/world/terrain.gd")
+const Khouribga = preload("res://scripts/world/khouribga.gd")
+const MAPS := {"valle": "Training valley (fictional)", "khouribga": "Khouribga GMMK (real terrain)"}
 
 var terrain
 var sun: DirectionalLight3D
@@ -10,19 +12,46 @@ var trees: MultiMeshInstance3D
 var windsocks: Array[Node3D] = []
 var tree_capacity := 9000
 var hover_spot := Vector3.ZERO       # lesson L3 hover-taxi target, 22 m north of the main pad centre
+var map_id := "valle"
+var real_map                         # khouribga.gd when a real map is loaded
+var surface_lift := 0.0              # pad decks and painted marks raised above apron meshes on real maps
 
-func build() -> void:
+func build(id := "valle") -> void:
+	map_id = id if MAPS.has(id) else "valle"
 	_build_environment()
 	terrain = Terrain.new()
 	terrain.name = "Terrain"
+	if map_id != "valle":
+		terrain.map_dir = "res://data/maps/" + map_id
 	add_child(terrain)
 	terrain.generate()
+	if map_id != "valle":
+		surface_lift = 0.1      # real maps draw apron/taxiway/runway meshes just above the ground
 	for pad_name in terrain.pads:
 		var pd: Dictionary = terrain.pads[pad_name]
 		_build_pad(pd["pos"], pd["radius"], pad_name)
+		if surface_lift > 0.0:
+			# the pad deck sits on top of the apron: make the flight model's ground match it
+			var deck := surface_lift + 0.03
+			var half_side := minf(float(pd["radius"]) * 0.6, 12.0) * 1.4
+			terrain.add_building(pd["pos"], Vector3(half_side, deck, half_side))
+			pd["pos"] = pd["pos"] + Vector3(0, deck, 0)
 	_build_training_marks()
-	_build_buildings()
-	_build_trees()
+	if map_id == "khouribga":
+		env.fog_light_color = Color(0.80, 0.76, 0.70)   # dry, dusty plateau haze
+		real_map = Khouribga.new()
+		real_map.build(self)
+	else:
+		_build_buildings()
+		_build_trees()
+
+## Short place description for the instructor ("over the valley" / "over Khouribga").
+func place_name() -> String:
+	return "the Khouribga plateau" if map_id == "khouribga" else "the valley floor"
+
+func set_building_share(f: float) -> void:
+	if real_map:
+		real_map.set_building_share(f)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -89,7 +118,7 @@ func _build_pad(p: Vector3, radius: float, pad_name: String) -> void:
 	pm.height = 0.06
 	pm.radial_segments = 40
 	pad.mesh = pm
-	pad.position = p + Vector3(0, 0.0, 0)
+	pad.position = p + Vector3(0, surface_lift, 0)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _pad_texture()
 	mat.uv1_triplanar = true
@@ -128,7 +157,7 @@ func _build_training_marks() -> void:
 	var yellow := StandardMaterial3D.new()
 	yellow.albedo_color = Color(0.98, 0.82, 0.10)
 	yellow.roughness = 0.85
-	var y0 := 0.035
+	var y0 := 0.035 + surface_lift
 	# dashed line from the pad edge to the spot
 	var z := p.z - 12.5
 	while z > hover_spot.z + 2.0:

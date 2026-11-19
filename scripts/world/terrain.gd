@@ -1,12 +1,19 @@
 extends Node3D
-## Procedural 4 x 4 km test valley ("Valle Bianca", fictional, realistic elevations
-## 280-1300 m MSL). The same height grid is used for rendering AND for the flight
-## model's skid contact, ground effect and AGL, so what you see is what you hit.
+## Terrain height grid. Two sources:
+##  - procedural 4 x 4 km test valley ("Valle Bianca", fictional, realistic elevations 280-1300 m MSL)
+##  - a real map loaded from data/maps/<id>/ (heights from a DEM + satellite photo), see load_map().
+## The same height grid is used for rendering AND for the flight model's skid contact,
+## ground effect and AGL, so what you see is what you hit.
 
-const SIZE := 4096.0
-const N := 257                 # vertices per side (16 m spacing)
-const CELL := SIZE / float(N - 1)
-const HALF := SIZE * 0.5
+var SIZE := 4096.0
+var N := 257                   # vertices per side (16 m spacing)
+var CELL := SIZE / float(N - 1)
+var HALF := SIZE * 0.5
+var map_dir := ""              # "" = procedural valley, else e.g. "res://data/maps/khouribga"
+var map_meta := {}             # map.json of a real map
+var ortho: ImageTexture        # satellite photo of a real map
+const BUCKET := 64.0           # building lookup grid (m)
+var _bld_grid := {}            # Vector2i -> Array of building indices
 
 var heights := PackedFloat32Array()
 var buildings: Array = []      # each: {"min": Vector3, "max": Vector3}
@@ -42,7 +49,39 @@ func _raw_height(x: float, z: float) -> float:
 	var edge := smoothstep(1450.0, 2048.0, maxf(absf(x), absf(z))) * 420.0
 	return floor_h + mountain + edge
 
+## Loads a real map: height.bin (uint16 * height_scale m, row = z index from north), map.json, photo.
+func load_map(dir: String) -> bool:
+	var js := FileAccess.get_file_as_string(dir + "/map.json")
+	var meta = JSON.parse_string(js)
+	if typeof(meta) != TYPE_DICTIONARY:
+		push_error("map.json missing in " + dir)
+		return false
+	map_meta = meta
+	map_dir = dir
+	SIZE = float(meta["size_m"])
+	N = int(meta["n"])
+	CELL = SIZE / float(N - 1)
+	HALF = SIZE * 0.5
+	var raw := FileAccess.get_file_as_bytes(dir + "/height.bin")
+	var sc := float(meta["height_scale"])
+	heights.resize(N * N)
+	for k in N * N:
+		heights[k] = raw.decode_u16(k * 2) * sc
+	var img := Image.new()
+	if img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(dir + "/ortho_jpg.bin")) == OK:
+		img.generate_mipmaps()
+		ortho = ImageTexture.create_from_image(img)
+	var pd: Dictionary = meta["pads"]
+	for pad_name in pd:
+		var a: Array = pd[pad_name]
+		_add_pad(pad_name, Vector3(a[0], 0.0, a[1]), a[2], 30.0 if a[2] > 12.0 else 18.0, 0.0)
+	_build_mesh()
+	return true
+
 func generate() -> void:
+	if map_dir != "":
+		load_map(map_dir)
+		return
 	heights.resize(N * N)
 	for j in N:
 		var z := -HALF + j * CELL
@@ -103,7 +142,11 @@ func _grid_height(x: float, z: float) -> float:
 ## Ground height used by the flight model (terrain plus building roofs).
 func height_at(x: float, z: float) -> float:
 	var h := _grid_height(x, z)
-	for b in buildings:
+	var cell = _bld_grid.get(Vector2i(floori(x / BUCKET), floori(z / BUCKET)))
+	if cell == null:
+		return h
+	for k in cell:
+		var b: Dictionary = buildings[k]
 		var mn: Vector3 = b["min"]
 		var mx: Vector3 = b["max"]
 		if x >= mn.x and x <= mx.x and z >= mn.z and z <= mx.z:
@@ -117,7 +160,17 @@ func normal_at(x: float, z: float) -> Vector3:
 	return Vector3(-hx, 2.0 * e, -hz).normalized()
 
 func add_building(center: Vector3, size: Vector3) -> void:
-	buildings.append({"min": center - Vector3(size.x, 0.0, size.z) * 0.5, "max": center + Vector3(size.x * 0.5, size.y, size.z * 0.5)})
+	var b := {"min": center - Vector3(size.x, 0.0, size.z) * 0.5, "max": center + Vector3(size.x * 0.5, size.y, size.z * 0.5)}
+	buildings.append(b)
+	var k := buildings.size() - 1
+	var mn: Vector3 = b["min"]
+	var mx: Vector3 = b["max"]
+	for gx in range(floori(mn.x / BUCKET), floori(mx.x / BUCKET) + 1):
+		for gz in range(floori(mn.z / BUCKET), floori(mx.z / BUCKET) + 1):
+			var key := Vector2i(gx, gz)
+			if not _bld_grid.has(key):
+				_bld_grid[key] = []
+			_bld_grid[key].append(k)
 
 func _build_mesh() -> void:
 	var verts := PackedVector3Array()
@@ -157,7 +210,12 @@ func _build_mesh() -> void:
 	mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = mesh
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/terrain.gdshader")
+	if ortho:
+		mat.shader = load("res://shaders/terrain_photo.gdshader")
+		mat.set_shader_parameter("photo", ortho)
+		mat.set_shader_parameter("map_size", SIZE)
+	else:
+		mat.shader = load("res://shaders/terrain.gdshader")
 	mesh_instance.material_override = mat
 	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mesh_instance)
@@ -166,9 +224,15 @@ func _build_mesh() -> void:
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(40000, 40000)
 	far.mesh = pm
-	far.position = Vector3(0, 240.0, 0)
+	var hmin := 240.0
+	if ortho:
+		hmin = 1e9
+		for v in heights:
+			hmin = minf(hmin, v)
+		hmin -= 3.0
+	far.position = Vector3(0, hmin, 0)
 	var fm := StandardMaterial3D.new()
-	fm.albedo_color = Color(0.36, 0.40, 0.33)
+	fm.albedo_color = Color(0.58, 0.40, 0.28) if ortho else Color(0.36, 0.40, 0.33)
 	fm.roughness = 1.0
 	far.material_override = fm
 	far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
