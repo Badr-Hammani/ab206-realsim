@@ -46,6 +46,9 @@ var pitches: Array = []       # sports pitches: [corners PackedVector2Array]
 const STREET_MPP := 7.0       # streets drawn as lines below this many metres per pixel
 ## motorway, trunk/primary, secondary, tertiary: colour, width
 const ROAD_STYLE := [[Color(1.0, 0.55, 0.25), 3.0], [Color(1.0, 0.85, 0.35), 2.4], [Color(1.0, 0.95, 0.75), 1.7], [Color(0.95, 0.95, 0.95, 0.8), 1.1], [Color(0.2, 0.2, 0.2), 2.0]]
+const HdTiles := preload("res://scripts/ui/hd_tiles.gd")
+var hd                        # hd_tiles.gd: live HD aerial photos when zoomed in (needs internet)
+var hd_button: Button
 var markers: Node3D           # 3D beams at the pins, so they are visible while flying
 var _trail_t := 0.0
 var _drag_from := Vector2.ZERO
@@ -64,6 +67,11 @@ func setup(m, t, id: String) -> void:
 	_load()
 	_load_region()
 	_load_streets()
+	if region.has("proj"):
+		hd = HdTiles.new()
+		hd.name = "HdTiles"
+		add_child(hd)
+		hd.setup(region["proj"])
 	_build_small()
 	_build_big()
 	nav_label = Label.new()
@@ -109,7 +117,7 @@ func set_mode(m: int) -> void:
 		closed.emit()
 
 func zoom_small(f: float) -> void:
-	small_mpp = clampf(small_mpp * f, 2.0, 40.0)
+	small_mpp = clampf(small_mpp * f, 1.0, 40.0)
 
 ## Pin at the helicopter's position (J key).
 func drop_pin_here() -> String:
@@ -234,6 +242,7 @@ func _build_big() -> void:
 	_btn(bar, "Undo point", func() -> void:
 		if draft.size() > 0:
 			draft.remove_at(draft.size() - 1))
+	hd_button = _btn(bar, "HD photo: ON", _toggle_hd)
 	_btn(bar, "Centre on helicopter", func() -> void: follow = true)
 	_btn(bar, "Clear target", func() -> void: target = -1; _save(); _refresh_info())
 	_btn(bar, "Close (K / Esc)", func() -> void: set_mode(Mode.OFF))
@@ -271,6 +280,17 @@ func _build_big() -> void:
 			_save()
 			_refresh_info())
 	_set_tool("pin")
+
+func _toggle_hd() -> void:
+	if hd == null:
+		return
+	if hd.offline():
+		hd.fail_count = 0
+		hd.failed.clear()
+		hd.enabled = true
+	else:
+		hd.enabled = not hd.enabled
+	hd_button.text = "HD photo: ON" if hd.enabled else "HD photo: OFF"
 
 func _set_tool(t: String) -> void:
 	tool = t
@@ -333,7 +353,7 @@ func _big_input(ev: InputEvent) -> void:
 
 func _zoom_at(screen: Vector2, f: float) -> void:
 	var before := _to_world(big_view, big_centre, big_mpp, screen)
-	big_mpp = clampf(big_mpp * f, 0.5, 50.0)
+	big_mpp = clampf(big_mpp * f, 0.25, 80.0)
 	var after := _to_world(big_view, big_centre, big_mpp, screen)
 	big_centre += before - after
 	if f < 1.0:
@@ -463,6 +483,9 @@ func _draw_map(v: Control, c: Vector2, mpp: float, big: bool) -> void:
 		v.draw_texture_rect(region_photo, Rect2(_to_screen(v, c, mpp, Vector2(-rh, -rh)), Vector2(rh, rh) * 2.0 / mpp), false)
 	var tl := _to_screen(v, c, mpp, Vector2(-half, -half))
 	v.draw_texture_rect(terrain.ortho, Rect2(tl, Vector2(size_m, size_m) / mpp), false)
+	var hd_on := false
+	if hd != null:
+		hd_on = hd.draw(v, c, mpp, view_world, float(region.get("size_m", size_m)) * 0.5)
 	if region_photo and mpp > 12.0:
 		# edge of the area with 3D houses, roads and full-detail ground
 		v.draw_rect(Rect2(tl, Vector2(size_m, size_m) / mpp), Color(1, 1, 1, 0.35), false, 1.0)
@@ -486,7 +509,7 @@ func _draw_map(v: Control, c: Vector2, mpp: float, big: bool) -> void:
 		else:
 			v.draw_polyline(sp, Color(0, 0, 0, 0.45), float(st[1]) + 1.5)
 			v.draw_polyline(sp, st[0], float(st[1]))
-	if mpp < STREET_MPP:
+	if mpp < STREET_MPP and not hd_on:
 		_draw_streets(v, c, mpp, view_world)
 	var font := ThemeDB.fallback_font
 	var fs := 13
@@ -607,6 +630,10 @@ func _draw_map(v: Control, c: Vector2, mpp: float, big: bool) -> void:
 	v.draw_line(bl, bl + Vector2(bar_m / mpp, 0), Color(0, 0, 0), 5.0)
 	v.draw_line(bl, bl + Vector2(bar_m / mpp, 0), Color(1, 1, 1), 2.0)
 	_label(v, bl + Vector2(0, -6), _dist_text(bar_m), 12, Color.WHITE, true)
+	if hd_on:
+		_label(v, Vector2(v.size.x - font.get_string_size(hd.CREDIT, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x - 10, 52 if big else 50), hd.CREDIT, 11, Color(1, 1, 1, 0.9), true)
+	elif big and hd != null and hd.enabled and hd.offline() and mpp < hd.START_MPP:
+		_label(v, Vector2(10, 52), "HD photo needs internet (not reachable). Click HD photo to retry.", 12, Color(1, 0.8, 0.5), true)
 	# cursor readout (big map)
 	if big and Rect2(Vector2.ZERO, v.size).has_point(mouse_pos):
 		var w := _to_world(v, c, mpp, mouse_pos)
@@ -626,6 +653,8 @@ static func _dist_text(m: float) -> String:
 	return "%.0f m" % m if m < 1000.0 else "%.1f km" % (m / 1000.0)
 
 func _latlon(xz: Vector2) -> Vector2:
+	if hd != null:
+		return hd.to_latlon(xz)
 	var lat0 := float(terrain.map_meta.get("origin_lat", 0.0))
 	var lon0 := float(terrain.map_meta.get("origin_lon", 0.0))
 	return Vector2(lat0 - xz.y / 111320.0, lon0 + xz.x / (111320.0 * cos(deg_to_rad(lat0))))

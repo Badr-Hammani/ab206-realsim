@@ -99,6 +99,27 @@ func _run() -> void:
 	main._set_paused(false)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://nav_marks_test_tmp.json"))
 	check("[M10] moving map: pins, target bearing, zones, saved", pname == "P1" and tt.begins_with("TO North   000°   2.0 km") and inside == 0 and nm.pins.size() == 2 and nm.zones.size() == 1 and nm.markers.get_child_count() >= 4 and nm.region_photo != null and nm.region.get("towns", []).size() > 20 and nm.region_roads.size() > 500 and nm.streets.size() > 5000 and nm.pitches.size() > 3, "%s | zone hit %d | reloaded %d pins %d zones | region: %d towns, %d roads" % [tt, inside, nm.pins.size(), nm.zones.size(), nm.region.get("towns", []).size(), nm.region_roads.size()])
+	# HD aerial tiles: projection accuracy against pyproj, then live download from a local test server
+	var hd = nm.hd
+	var p1: Vector2 = hd.to_map(-6.6339, 32.8783)
+	var p2: Vector2 = hd.to_map(-7.4, 33.3)
+	var back: Vector2 = hd.to_latlon(p2)
+	var perr := maxf(p1.distance_to(Vector2(29626.243, -2139.758)), p2.distance_to(Vector2(-41866.310, -48953.883)))
+	var berr := maxf(absf(back.x - 33.3), absf(back.y + 7.4)) * 111000.0
+	hd.url = "http://127.0.0.1:8765/tile.jpg?%d/%d/%d"
+	nm.follow = false
+	nm.big_centre = hx
+	nm.big_mpp = 1.5
+	nm.set_mode(nm.Mode.BIG)
+	var zz: int = hd.zoom_for(1.5)
+	for i in 200:
+		await process_frame
+		if hd.cache.size() >= 6 and hd.pending.is_empty():
+			break
+		await create_timer(0.03).timeout
+	nm.set_mode(nm.Mode.OFF)
+	main._set_paused(false)
+	check("[M11] HD photo tiles: placed to the cm, fetched live, cached", perr < 0.05 and berr < 0.5 and zz == 17 and hd.cache.size() >= 6 and hd.fail_count == 0, "projection error %.3f m / back %.3f m, zoom %d at 1.5 m/px, %d tiles loaded, %d failed" % [perr, berr, zz, hd.cache.size(), hd.fail_count])
 	var s0: String = w.season
 	main.set_season("spring")
 	var tex_sp = t.ortho

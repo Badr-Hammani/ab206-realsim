@@ -71,7 +71,7 @@ ESA WorldCover 2021 (CC BY 4.0); © OpenStreetMap contributors (ODbL) via Overtu
 - In flight, the target line shows bearing (true), distance, which way to turn and time to go at the
   current ground speed; "INSIDE ZONE" appears while you are inside a zone. Each point is also a tall
   beam with its name in the 3D world.
-- The map covers 64 x 64 km around Khouribga (Sentinel-2 photo at 32 m per pixel, same season as the
+- The map covers 98 x 98 km around Khouribga, as far as Oued Zem, Ben Ahmed and Boujniba (Sentinel-2 photo at 16 m per pixel, same season as the
   ground) with town and village names and populations (Overture Maps divisions) and the main roads and
   railways (OpenStreetMap). The thin white square marks the 16 km area that has full 3D detail.
   Range rings around the helicopter, a scale bar and (big map) a cursor readout of bearing, distance and
@@ -82,3 +82,20 @@ ESA WorldCover 2021 (CC BY 4.0); © OpenStreetMap contributors (ODbL) via Overtu
   Rebuild with tools/maps/build_region.py and photo_composite.py with REGION=1.
 - Points and zones are saved in the user data folder, `nav_marks_khouribga.json` (latitude/longitude are
   shown in the big map's list).
+
+### HD aerial photos (live, needs internet)
+
+Zoomed in closer than 10 m per screen pixel, the map fetches Esri World Imagery tiles
+(Maxar / Earthstar aerial photos, about 0.3 to 1 m per pixel over Khouribga and Oued Zem) from
+`server.arcgisonline.com`, at the zoom level that matches the screen (z13 to z19). Only tiles on
+screen are requested, six at a time, nearest the centre first; while a tile downloads, the part of
+a coarser tile already in memory is shown. Tiles stay in memory only (600 tiles, oldest dropped),
+nothing is written to disk. Tile corners are placed with cubic polynomials between lon/lat and
+map metres stored in `region.json` (`proj`, fitted by `build_region.py` against pyproj, error under
+1 cm), which also give the cursor GPS readout. "HD photo: ON/OFF" in the big map toolbar turns it
+off; without internet the map says so and keeps the 10 m Sentinel-2 photo.
+
+Licence: Esri's basemaps may be used free for personal, non-commercial use with the attribution
+shown on the map ("HD imagery © Esri, Maxar, Earthstar Geographics"). Bulk downloading or storing
+the tiles offline is not allowed, which is why they are streamed. Selling the simulator would need
+an ArcGIS Location Platform account (API key) or another licensed imagery source.
