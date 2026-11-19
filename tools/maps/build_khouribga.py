@@ -7,8 +7,9 @@ Sources (all free/open):
   - Airport layout, buildings, names: OpenStreetMap via Overture Maps 2026-11-18.0 (ODbL)
 Output: data/maps/khouribga/{height.bin, map.json}; the photos come from photo_composite.py
 
-Usage: python build_khouribga.py <dl_dir> <infra.json> <buildings.json> <out_dir>
-(dl_dir holds the two Copernicus tiles; infra/buildings json come from the Overture query in overture_query.py)
+Usage: python build_khouribga.py <dl_dir> <infra.json> <buildings.json> <out_dir> <roads.json> <landuse.json> <land.json> <places.json>
+(dl_dir holds the two Copernicus tiles; the json files come from overture_query.py: infra, buildings, roads (transportation
+segments), landuse (base/land_use), land (base/land: tree rows) and places (overture_query.py places mode))
 """
 import json, math, sys, io, os
 import numpy as np
@@ -23,7 +24,7 @@ from shapely import transform as shp_transform2
 from shapely.prepared import prep
 from PIL import Image
 
-DL, INFRA, BLD, OUT, ROADS = sys.argv[1:6]
+DL, INFRA, BLD, OUT, ROADS, LANDUSE, LANDF, PLACES = sys.argv[1:9]
 os.makedirs(OUT, exist_ok=True)
 
 # World origin = the OSM helipad on the airport's main apron ("Main helipad" in the sim).
@@ -135,9 +136,101 @@ for r in json.load(open(ROADS)):
 road_zone = prep(unary_union(road_geoms))
 print("roads:", len(roads), "km %.0f" % (sum(LineString([(p[0], p[1]) for p in r[2]]).length for r in roads) / 1000))
 
+# ---------------------------------------------------------------- real land use (OSM via Overture)
+# Parks, sports pitches, cemeteries, schools, hospitals, industry: drawn as ground areas, and no estimated
+# houses inside them. Area kinds: 0 park / grass, 1 sports pitch, 2 cemetery, 3 school or hospital yard.
+AREA_KIND = {"park": 0, "grass": 0, "garden": 0, "recreation_ground": 0, "playground": 0, "pitch": 1, "stadium": 1,
+             "cemetery": 2, "school": 3, "university": 3, "college": 3, "hospital": 3}
+NO_HOUSE = set(AREA_KIND) | {"industrial", "quarry", "orchard", "farmland"}
+from shapely import constrained_delaunay_triangles
+areas = []
+lu_polys = []         # (class, name, polygon in east/north)
+no_house = []
+for r in json.load(open(LANDUSE)):
+    g = geom_local(WKT.loads(r["wkt"]))
+    if g.geom_type == "MultiPolygon":
+        parts = list(g.geoms)
+    elif g.geom_type == "Polygon":
+        parts = [g]
+    else:
+        continue
+    for pg in parts:
+        if not pg.is_valid:
+            pg = pg.buffer(0)
+        c = r["class"]
+        lu_polys.append((c, r["name"], pg))
+        if c in NO_HOUSE:
+            no_house.append(pg.buffer(3))
+        if c not in AREA_KIND or pg.area > 400000:
+            continue
+        k = AREA_KIND[c]
+        tri = []
+        if k == 1:
+            # pitch: its oriented rectangle, so the lines can be drawn in the rectangle's frame
+            rr = pg.minimum_rotated_rectangle
+            cc = np.array(rr.exterior.coords)[:4]
+            e1 = cc[1] - cc[0]; e2 = cc[2] - cc[1]
+            if np.linalg.norm(e1) < np.linalg.norm(e2):
+                e1, e2 = e2, e1
+            ctr = cc.mean(axis=0)
+            L = float(np.linalg.norm(e1)); W = float(np.linalg.norm(e2))
+            u = e1 / L; v = e2 / W
+            nl = max(1, int(L / 10)); nw = max(1, int(W / 10))
+            for a in range(nl):
+                for b in range(nw):
+                    q = [ctr + u * (L * (a / nl - 0.5)) + v * (W * (b / nw - 0.5)), ctr + u * (L * ((a + 1) / nl - 0.5)) + v * (W * (b / nw - 0.5)),
+                         ctr + u * (L * ((a + 1) / nl - 0.5)) + v * (W * ((b + 1) / nw - 0.5)), ctr + u * (L * (a / nl - 0.5)) + v * (W * ((b + 1) / nw - 0.5))]
+                    for t in ((q[0], q[1], q[2]), (q[0], q[2], q[3])):
+                        tri += [round(float(t[i][j]) * (1 if j == 0 else -1), 1) for i in range(3) for j in range(2)]
+            areas.append([k, tri, [round(float(ctr[0]), 1), round(float(-ctr[1]), 1), round(float(u[0]), 4), round(float(-u[1]), 4), round(L, 1), round(W, 1)]])
+            continue
+        # other areas: clipped to a 10 m grid so they follow the ground, then triangulated
+        x0, y0, x1, y1 = pg.bounds
+        for gx in np.arange(math.floor(x0 / 10) * 10, x1, 10):
+            for gy in np.arange(math.floor(y0 / 10) * 10, y1, 10):
+                piece = pg.intersection(box(gx, gy, gx + 10, gy + 10))
+                if piece.is_empty or piece.area < 0.5:
+                    continue
+                for t in constrained_delaunay_triangles(piece).geoms:
+                    cs = list(t.exterior.coords)[:3]
+                    # Godot front faces are clockwise seen from above (x east, z south)
+                    (ax, ay), (bx, by), (cx_, cy_) = cs
+                    if (bx - ax) * (cy_ - ay) - (by - ay) * (cx_ - ax) < 0:
+                        cs = [cs[0], cs[2], cs[1]]
+                    tri += [round(v, 1) for x, y in cs for v in (x, -y)]
+        if tri:
+            areas.append([k, tri])
+no_house_zone = prep(unary_union(no_house)) if no_house else None
+print("land-use areas:", len(areas), "no-house polygons:", len(no_house))
+
+# ---------------------------------------------------------------- real places (Overture places)
+places = json.load(open(PLACES))
+def place_xy(o):
+    e, n = to_local.transform(o["x"], o["y"])
+    return e, n
+mosques, fuel, poi = [], [], []
+for o in places:
+    e, n = place_xy(o)
+    if abs(e) > HALF - 300 or abs(n) > HALF - 300:
+        continue
+    if o["cat"] in ("muslim_place_of_worship",) and o["conf"] >= 0.4:
+        if all(math.hypot(e - a, n - b) > 60 for a, b, _ in mosques):
+            mosques.append((e, n, o["name"]))
+    elif o["cat"] == "gas_station" and o["conf"] >= 0.6:
+        if all(math.hypot(e - a, n - b) > 60 for a, b, _ in fuel):
+            fuel.append((e, n, o["name"]))
+    if o["cat"] and o["conf"] >= 0.5:
+        poi.append((e, n))
+print("mosques:", len(mosques), "fuel stations:", len(fuel), "shops/services:", len(poi))
+from scipy.spatial import cKDTree
+poi_tree = cKDTree(np.array(poi)) if poi else None
+special_zone = prep(unary_union([Point(e, n).buffer(30) for e, n, _ in mosques + fuel])) if mosques or fuel else None
+
 # ---------------------------------------------------------------- buildings
 rng = np.random.default_rng(206)
-blds = []         # [x, z, w(along yaw), d, yaw_deg, h, src]  src 0 = OSM footprint, 1 = estimated
+# [x, z, w(along yaw), d, yaw_deg, h, src(, base)]  src 0 = OSM footprint, 1 = estimated, 2 mosque hall,
+# 3 minaret, 4 school / hospital / kiosk, 5 industrial shed, 6 fuel station canopy (base = height above ground)
+blds = []
 bld = json.load(open(BLD))
 osm_polys = []
 for b in bld:
@@ -172,12 +265,69 @@ for cj in range(cells):
         p = Point(e, n)
         if keep_out.contains(p) or road_zone.contains(p) or (osm_union and osm_union.contains(p)):
             continue
+        if (no_house_zone and no_house_zone.contains(p)) or (special_zone and special_zone.contains(p)):
+            continue
         w = rng.uniform(11, 15); d = rng.uniform(11, 15)
         storeys = rng.choice([1, 2, 2, 3, 3, 4], p=[0.18, 0.3, 0.2, 0.17, 0.1, 0.05])
+        # busier streets (many shops, cafes, banks nearby) have taller buildings
+        if poi_tree is not None:
+            busy = len(poi_tree.query_ball_point((e, n), 250))
+            if busy >= 12 and rng.random() < 0.7:
+                storeys += 1 + int(busy >= 30 and rng.random() < 0.5)
         blds.append([e + rng.uniform(-1, 1), -n + rng.uniform(-1, 1), w, d, 0.0, float(storeys * 3.1), 1])
+# real landmarks from Overture places / OSM land use
+def add_block(e, n, w, d, yaw, h, src, base=0.0):
+    b = [e, -n, float(w), float(d), float(yaw), float(h), src]
+    if base:
+        b.append(float(base))
+    blds.append(b)
+for e, n, _ in mosques:
+    yaw = float(rng.uniform(0, 90))
+    a = math.radians(yaw)
+    ux, uy = math.sin(a), math.cos(a)       # along w
+    vx, vy = math.cos(a), -math.sin(a)      # along d
+    add_block(e, n, 24, 22, yaw, 8.5, 2)
+    mx, my = e + ux * 13 + vx * 12, n + uy * 13 + vy * 12          # minaret at one corner
+    add_block(mx, my, 5, 5, yaw, 24, 3)
+    add_block(mx, my, 3.6, 3.6, yaw, 4.5, 3, base=24)
+for e, n, _ in fuel:
+    yaw = float(rng.uniform(0, 90))
+    add_block(e, n, 24, 13, yaw, 0.9, 6, base=4.8)
+    a = math.radians(yaw)
+    add_block(e + math.cos(a) * 14, n - math.sin(a) * 14, 10, 7, yaw, 3.8, 4)
+for c, name, pg in lu_polys:
+    if c not in ("school", "college", "university", "hospital", "industrial"):
+        continue
+    rr = pg.minimum_rotated_rectangle
+    cc = np.array(rr.exterior.coords)[:4]
+    e1 = cc[1] - cc[0]; e2 = cc[2] - cc[1]
+    if np.linalg.norm(e1) < np.linalg.norm(e2):
+        e1, e2 = e2, e1
+    L = float(np.linalg.norm(e1)); W = float(np.linalg.norm(e2))
+    if L < 20 or W < 15:
+        continue
+    u = e1 / L; v = e2 / W
+    ctr = np.array(pg.representative_point().coords[0]) if not pg.contains(Point(cc.mean(axis=0))) else cc.mean(axis=0)
+    yaw = math.degrees(math.atan2(u[0], u[1]))
+    if c == "industrial":
+        # sheds in rows, 50 x 28 m
+        for a in np.arange(-L / 2 + 30, L / 2 - 25, 62):
+            for b in np.arange(-W / 2 + 20, W / 2 - 15, 40):
+                q = ctr + u * a + v * b
+                if pg.contains(Point(q)):
+                    add_block(q[0], q[1], 50, 28, yaw, float(rng.uniform(7, 11)), 5)
+        continue
+    storeys = 3 if c == "hospital" else 2
+    blen = min(L * 0.65, 90.0); bdep = 16.0 if c == "hospital" else 11.0
+    rows = [-W * 0.25, W * 0.25] if W > 55 else [-W * 0.5 + bdep * 0.5 + 6]
+    for b in rows:
+        q = ctr + v * b
+        if pg.contains(Point(q)):
+            add_block(q[0], q[1], blen, bdep, yaw, storeys * 3.4, 4)
+print("landmark buildings:", sum(1 for b in blds if b[6] >= 2))
 est = [b for b in blds if b[6] == 1]
 rng.shuffle(est)   # random order: the low graphics presets draw only the first part
-blds = [b for b in blds if b[6] == 0] + est
+blds = [b for b in blds if b[6] != 1] + est
 print("buildings: %d OSM + %d estimated" % (sum(1 for b in blds if b[6] == 0), sum(1 for b in blds if b[6] == 1)))
 
 # ---------------------------------------------------------------- trees (WorldCover class 10 = tree cover)
@@ -195,7 +345,22 @@ for cj in range(tc):
         if keep_out.contains(p) or road_zone.contains(p):
             continue
         trees.append([round(e + rng.uniform(-5, 5), 1), round(-n + rng.uniform(-5, 5), 1), round(float(rng.uniform(0.7, 1.4)), 2)])
-print("trees:", len(trees))
+# real single trees and tree rows (OSM via Overture base/land)
+nreal = 0
+for r in json.load(open(LANDF)):
+    if r["subtype"] != "tree":
+        continue
+    g = geom_local(WKT.loads(r["wkt"]))
+    pts = []
+    if g.geom_type == "Point":
+        pts = [(g.x, g.y)]
+    elif g.geom_type == "LineString":
+        pts = [g.interpolate(t).coords[0] for t in np.arange(0, g.length + 0.1, 7.0)]
+    for e, n in pts:
+        if abs(e) < HALF - 50 and abs(n) < HALF - 50:
+            trees.append([round(e, 1), round(-n, 1), round(float(rng.uniform(0.8, 1.2)), 2)])
+            nreal += 1
+print("trees:", len(trees), "of which real OSM trees/rows:", nreal)
 
 # ---------------------------------------------------------------- landing sites for the lessons
 def h_at(x, z):
@@ -244,6 +409,8 @@ meta = {
         "photo": "Sentinel-2 L2A surface reflectance, median of 4 clear days per season (spring: Mar-Apr 2025, summer: Jul-Aug 2025), natural colour, 10 m",
         "roads": "OpenStreetMap contributors (ODbL) via Overture Maps 2026-11-18.0",
         "land_cover": "ESA WorldCover 2021 v200 (10 m): built-up -> estimated houses, tree cover -> trees",
+        "land_use": "OpenStreetMap contributors (ODbL) via Overture Maps: parks, pitches, cemeteries, schools, hospitals, industry, tree rows",
+        "places": "Overture Maps places (CDLA Permissive 2.0): mosques, fuel stations, shop density for building heights",
         "airport": "OpenStreetMap contributors (ODbL) via Overture Maps 2026-11-18.0; runway size from OpenAIP",
     },
     "airport": {
@@ -258,7 +425,8 @@ meta = {
     # 100 m SE of the real apron helipad, so the hover sight gates to the north are not inside the hangar
     # that stands 40 m north of the real pad. "Apron helipad" is the real one (OSM position).
     "pads": {"Main helipad": [MAIN[0], MAIN[1], 26.0], "Apron helipad": [0.0, 0.0, 15.0], "Field LZ": [field[0], field[1], 20.0], "Pinnacle LZ": [pin[0], pin[1], 9.0]},
-    "landmarks": landmarks,
+    "landmarks": landmarks + [{"name": nm or "Mosque", "x": round(e, 1), "z": round(-n, 1)} for e, n, nm in mosques],
+    "areas": areas,
     "roads": roads,
     "photos": {"spring": "photo_spring_jpg.bin", "summer": "photo_summer_jpg.bin"},
     "buildings": [[round(v, 2) if isinstance(v, float) else v for v in b] for b in blds],

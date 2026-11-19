@@ -59,12 +59,16 @@ func place_name() -> String:
 func set_draw_preset(p: int) -> void:
 	if real_map:
 		real_map.set_draw_distance(p)
+	if terrain and not terrain.tiles.is_empty():
+		terrain.set_lod_preset(p)
 
 ## Photo season of a real map ("spring" / "summer"); no reload needed.
 func set_season(s: String) -> void:
 	season = s
 	if terrain:
 		terrain.set_season(s)
+		if real_map and real_map.has_method("set_photo"):
+			real_map.set_photo(terrain.ortho)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()

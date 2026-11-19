@@ -15,6 +15,8 @@ var house_tiles: Array[GeometryInstance3D] = []
 var tree_tiles: Array[GeometryInstance3D] = []
 var street_tiles: Array[GeometryInstance3D] = []
 var main_road_tiles: Array[GeometryInstance3D] = []
+var area_tiles: Array[GeometryInstance3D] = []
+var area_material: ShaderMaterial
 
 func build(w) -> void:
 	world = w
@@ -46,6 +48,7 @@ func build(w) -> void:
 		world.windsocks.append(ws)
 	var t0 := Time.get_ticks_msec()
 	_roads(terrain.map_meta.get("roads", []))
+	_areas(terrain.map_meta.get("areas", []))
 	var t1 := Time.get_ticks_msec()
 	_buildings(terrain.map_meta["buildings"])
 	var t2 := Time.get_ticks_msec()
@@ -69,6 +72,8 @@ func set_draw_distance(preset: int) -> void:
 		t.visibility_range_end = RANGE_STREETS[p]
 	for t in main_road_tiles:
 		t.visibility_range_end = RANGE_MAIN_ROADS[p]
+	for t in area_tiles:
+		t.visibility_range_end = RANGE_STREETS[p]
 
 func _v2(p) -> Vector2:
 	return Vector2(float(p[0]), float(p[1]))
@@ -223,6 +228,9 @@ func _buildings(list: Array) -> void:
 	rng.seed = 2552
 	# Moroccan town colours: white and cream render, ochre, sand, a few salmon/pink walls
 	var palette := [Color(0.80, 0.77, 0.70), Color(0.84, 0.83, 0.80), Color(0.76, 0.64, 0.50), Color(0.79, 0.70, 0.57), Color(0.74, 0.57, 0.48), Color(0.68, 0.58, 0.47)]
+	# real landmarks (src 2..6): mosque hall, minaret, school/hospital/kiosk, industrial shed, fuel canopy
+	var src_col := {2: Color(0.90, 0.89, 0.85), 3: Color(0.86, 0.80, 0.68), 4: Color(0.86, 0.80, 0.70), 5: Color(0.62, 0.63, 0.62), 6: Color(0.92, 0.92, 0.92)}
+	var plain := {2: true, 3: true, 5: true, 6: true}
 	for key in groups:
 		var g: Array = groups[key]
 		var c := _tile_centre(key)
@@ -238,12 +246,19 @@ func _buildings(list: Array) -> void:
 			var w := float(b[2])
 			var d := float(b[3])
 			var yaw := deg_to_rad(float(b[4]))
-			var h := float(b[5]) + 0.6
+			var src := int(b[6]) if b.size() > 6 else 0
+			var base := float(b[7]) if b.size() > 7 else 0.0
+			var h := float(b[5]) + (0.0 if base > 0.0 else 0.6)
 			var gnd := minf(minf(_gh(x - w * 0.4, z - d * 0.4), _gh(x + w * 0.4, z + d * 0.4)), _gh(x, z)) - 0.6
+			if base > 0.0:
+				gnd = _gh(x, z) + base
 			var basis := Basis(Vector3.UP, PI * 0.5 - yaw).scaled(Vector3(w, h, d))
 			mm.set_instance_transform(k, Transform3D(basis, Vector3(x - c.x, gnd + h * 0.5, z - c.z)))
 			var col: Color = palette[rng.randi() % palette.size()].darkened(rng.randf() * 0.10)
-			mm.set_instance_custom_data(k, Color(col.r, col.g, col.b, h))
+			if src_col.has(src):
+				col = (src_col[src] as Color).darkened(rng.randf() * 0.05)
+			# negative height tells the shader to draw plain walls (no windows)
+			mm.set_instance_custom_data(k, Color(col.r, col.g, col.b, -h if plain.has(src) else h))
 			var ax := absf(cos(PI * 0.5 - yaw)) * w + absf(sin(PI * 0.5 - yaw)) * d
 			var az := absf(sin(PI * 0.5 - yaw)) * w + absf(cos(PI * 0.5 - yaw)) * d
 			terrain.add_building(Vector3(x, gnd, z), Vector3(ax, h, az))
@@ -254,6 +269,61 @@ func _buildings(list: Array) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		world.add_child(mi)
 		house_tiles.append(mi)
+
+## Real land use from OpenStreetMap: parks, sports pitches, cemeteries, school and hospital yards.
+## Each area arrives as triangles (x, z pairs) already cut to a 10 m grid; vertices follow the ground.
+## Pitches carry their rectangle (centre, direction, length, width) so the shader can draw the lines.
+func _areas(list: Array) -> void:
+	if list.is_empty():
+		return
+	area_material = ShaderMaterial.new()
+	area_material.shader = load("res://shaders/area.gdshader")
+	area_material.set_shader_parameter("photo", terrain.ortho)
+	area_material.set_shader_parameter("map_size", terrain.SIZE)
+	var groups := {}
+	for a in list:
+		var kind := int(a[0])
+		var tri: Array = a[1]
+		if tri.size() < 6:
+			continue
+		var key := _tile_key(float(tri[0]) * 0.5, float(tri[1]) * 0.5)
+		if not groups.has(key):
+			var st0 := SurfaceTool.new()
+			st0.begin(Mesh.PRIMITIVE_TRIANGLES)
+			groups[key] = st0
+		var st: SurfaceTool = groups[key]
+		var o := _tile_centre(key) * 2.0
+		var rc := Vector2.ZERO
+		var ru := Vector2(1, 0)
+		var rl := 0.0
+		var rw := 0.0
+		if a.size() > 2:
+			var r: Array = a[2]
+			rc = Vector2(float(r[0]), float(r[1]))
+			ru = Vector2(float(r[2]), float(r[3]))
+			rl = float(r[4])
+			rw = float(r[5])
+		for k in range(0, tri.size() - 1, 2):
+			var px := float(tri[k])
+			var pz := float(tri[k + 1])
+			var q := Vector2(px, pz) - rc
+			st.set_uv(Vector2(q.dot(ru), q.dot(Vector2(-ru.y, ru.x))))
+			st.set_uv2(Vector2(float(kind), rl * 1000.0 + rw))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(px - o.x, _gh(px, pz) + 0.22, pz - o.z))
+	for key in groups:
+		var mi := MeshInstance3D.new()
+		mi.mesh = (groups[key] as SurfaceTool).commit()
+		mi.material_override = area_material
+		mi.position = _tile_centre(key) * 2.0
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.add_child(mi)
+		area_tiles.append(mi)
+
+## Season change: the areas tint the same satellite photo as the terrain.
+func set_photo(t: Texture2D) -> void:
+	if area_material:
+		area_material.set_shader_parameter("photo", t)
 
 ## Roads and railways: draped strips, one mesh per 1 km tile and road type.
 func _roads(list: Array) -> void:

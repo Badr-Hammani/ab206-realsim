@@ -63,10 +63,17 @@ func _run() -> void:
 	check("[M4] buildings, trees and roads present", nb > 10000 and ntree > 1000 and nroad > 5000, "%d buildings, %d trees, %d road segments, %d house tiles" % [nb, ntree, nroad, w.real_map.house_tiles.size()])
 	main.apply_preset(0)
 	var low: float = w.real_map.house_tiles[0].visibility_range_end
+	var tlow: float = t.tiles[0].visibility_range_end
 	main.apply_preset(2)
 	var high: float = w.real_map.house_tiles[0].visibility_range_end
+	var thigh: float = t.tiles[0].visibility_range_end
 	main.apply_preset(1)
-	check("[M4b] graphics preset sets draw distances", low < high and low > 1000.0, "houses drawn to %.0f m on Low, %.0f m on High" % [low, high])
+	check("[M4b] graphics preset sets draw distances", low < high and low > 1000.0 and tlow < thigh and tlow >= 1450.0, "houses drawn to %.0f m on Low, %.0f m on High; fine terrain to %.0f / %.0f m" % [low, high, tlow, thigh])
+	var nmin := 0
+	for b in t.map_meta["buildings"]:
+		if int(b[6]) == 3:
+			nmin += 1
+	check("[M4d] real OSM landmarks and land use", nmin >= 8 and w.real_map.area_tiles.size() > 0 and t.map_meta["areas"].size() > 50, "%d minaret parts, %d land-use areas in %d meshes" % [nmin, t.map_meta["areas"].size(), w.real_map.area_tiles.size()])
 	var s0: String = w.season
 	main.set_season("spring")
 	var tex_sp = t.ortho

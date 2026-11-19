@@ -60,6 +60,12 @@ var show_panel_2d := false
 var paused := false
 var _frame_ms: Array[float] = []
 var _fdm_usec_frame := 0
+# Auto quality: if the frame rate stays low for a few seconds, step the graphics preset down.
+const AUTO_Q_FPS := 38.0
+var _auto_q_off := false
+var _auto_q_wait := 8.0
+var _auto_q_ms := 0.0
+var _auto_q_n := 0
 var _touch_pending := false
 var _touch_sink := 0.0
 
@@ -317,6 +323,35 @@ func apply_preset(i: int) -> void:
 	world.set_draw_preset(preset)
 	_save_settings()
 
+## Lowers the preset (then the render scale on Low) when the average FPS stays under
+## AUTO_Q_FPS for 4 s of flying. Pressing F7 yourself turns this off for the session.
+func _auto_quality(delta: float) -> void:
+	if _auto_q_off or paused or _auto_dir != "" or DisplayServer.get_name() == "headless":
+		return
+	if not get_window().has_focus():
+		return
+	if _auto_q_wait > 0.0:
+		_auto_q_wait -= delta
+		return
+	_auto_q_ms += delta * 1000.0
+	_auto_q_n += 1
+	if _auto_q_ms < 4000.0:
+		return
+	var fps := 1000.0 * _auto_q_n / _auto_q_ms
+	_auto_q_ms = 0.0
+	_auto_q_n = 0
+	if fps >= AUTO_Q_FPS:
+		return
+	_auto_q_wait = 3.0
+	if preset > 0:
+		apply_preset(preset - 1)
+		instructor.force("Frame rate was low (%.0f FPS): graphics lowered to %s. F7 changes it." % [fps, preset_name()])
+	elif get_viewport().scaling_3d_scale > 0.41:
+		get_viewport().scaling_3d_scale = 0.4
+		instructor.force("Frame rate still low (%.0f FPS): render scale lowered." % fps)
+	else:
+		_auto_q_off = true
+
 func preset_name() -> String:
 	return ["Low", "Medium", "High"][preset]
 
@@ -364,6 +399,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F6:
 			hud.show_telemetry = not hud.show_telemetry
 		KEY_F7:
+			_auto_q_off = true
 			apply_preset((preset + 1) % 3)
 			instructor.force("Graphics preset: " + preset_name())
 		KEY_F8:
@@ -589,6 +625,7 @@ func _process(delta: float) -> void:
 	_frame_ms.append(delta * 1000.0)
 	if _frame_ms.size() > 600:
 		_frame_ms.pop_front()
+	_auto_quality(delta)
 	var xf := Transform3D(fdm.basis, fdm.pos)
 	heli.global_transform = xf
 	heli.update_visual(fdm, 0.0 if paused else delta)

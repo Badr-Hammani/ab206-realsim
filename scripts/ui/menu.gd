@@ -519,6 +519,7 @@ func _build_settings() -> void:
 	_row(c, "Phone controller  (F10)", "Tilt a phone as the cyclic or collective", pb)
 	var g := _card("Graphics and sound")
 	_row(g, "Graphics quality  (F7)", "Low is best on integrated graphics", _segmented(["Low", "Medium", "High"], main.preset, func(i: int) -> void:
+		main._auto_q_off = true
 		main.apply_preset(i)
 		build(), 80))
 	_slider_row(g, "Sound volume", 0.0, 1.0, 0.05, main.audio.master_volume, "%.2f", func(v: float) -> void: main.audio.master_volume = v)
