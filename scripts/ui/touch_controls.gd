@@ -74,6 +74,7 @@ func _layout_buttons() -> void:
 	var items := [
 		["MENU", "menu"], ["CAMERA", "cam"], ["PANEL", "panel"], ["HELP", "help"],
 		["PAD", "pad"], ["HOVER", "hover"], ["AUTO", "auto"], ["CTR CYC", "center"],
+		["MAP", "map"], ["PIN", "pin"], ["INSTR", "instr"], ["MAP +/-", "mapzoom"],
 	]
 	_buttons.clear()
 	var bw := 118.0
@@ -140,6 +141,17 @@ func _zone_at(p: Vector2) -> String:
 		return "cyc"
 	return ""
 
+var _map_zoom_step := 0
+
+## Same path as the keyboard so map / pin / instrument view behave exactly like K, Shift+K and Z.
+func _send_key(k: Key, shift: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = k
+	ev.physical_keycode = k
+	ev.shift_pressed = shift
+	ev.pressed = true
+	Input.parse_input_event(ev)
+
 func _press_button(a: String) -> void:
 	_flash[a] = 0.25
 	match a:
@@ -160,6 +172,20 @@ func _press_button(a: String) -> void:
 			main.reset_autorotation()
 		"center":
 			controls.stick_mouse = Vector2.ZERO
+		"map":
+			_send_key(KEY_K, false)
+		"pin":
+			_send_key(KEY_K, true)
+		"instr":
+			_send_key(KEY_Z, false)
+		"mapzoom":
+			# small map: cycle zoom in until close, then jump back out
+			_map_zoom_step += 1
+			if _map_zoom_step > 3:
+				_map_zoom_step = 0
+				main.nav_map.zoom_small(1.25 * 1.25 * 1.25)
+			else:
+				main.nav_map.zoom_small(0.8)
 		"throttle":
 			_thr_target = 0.0 if _thr_target > 0.5 else 1.0
 			_thr_driving = true

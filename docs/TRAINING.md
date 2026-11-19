@@ -39,6 +39,29 @@ Esc > H0 > choose what you fly: **All controls**, **Cyclic only**, **Collective 
 (the instructor keeps the rest). Your training assist (H) works as usual; with the instructor flying, the
 assist does nothing. The take-over limits are simulator choices, not a school standard.
 
+## Mission 2: FAM 02 + LIP 2 school briefings (milestone 2.13)
+
+Built from the student's own French briefing sheets (FAM 02 and LIP 2). Esc > Lessons, first card
+"MISSION 2". The coach speaks French and uses the school's words: PG (pas général = collective),
+PC (pas cyclique = cyclic), palonnier (pedals), assiette (pitch attitude), vario, bille (slip ball).
+A slip ball now sits at the bottom of the attitude indicator (lateral specific force, + = right;
+"marchez sur la bille").
+
+- **M2-A FAM 02**: start in level flight, 80 kt, ~1,500 ft, heading 360.
+  1. Coordination PG / palonnier: PG up ~5 % with LEFT pedal at the same time, then PG back down with RIGHT pedal (heading and ball must not move).
+  2. Relation assiette / vitesse: nose down -> 95 kt, PG up to hold vario 0 (above Vpm more speed = more power); nose up -> 60 kt, PG down. The V < Vpm case is explained in the text.
+  3. Vol en palier: 80 kt, PG adapté, vario 0, bille au centre for 30 s.
+- **M2-B LIP 2 transitions**: palier 80 kt; montée / descente 60 kt at +/-500 ft/min. Order follows the sheet's diagram:
+  1 palier->montée (cyclic predominance), 2 montée->palier (cyclic), 3 palier->descente (simultaneous, PG predominance),
+  4 descente->palier (simultaneous, PG), 1 again, 5 montée->descente (PG), 6 descente->montée (PG), 2 again.
+  Each transition is "stabilised" after 8 s inside +/-5 kt, +/-100 ft/min, ball, heading +/-10 deg. The debrief lists the time per transition.
+- **M2-C Stationnaire DES**: 1 m hover over the pad; 8 gusts push the position, heading or height. The HUD shows the three steps
+  live: 1 VISUALISER (what moves and which control), 2 CORRIGER, 3 RETOUR AU NEUTRE; an overshoot after returning counts against you.
+
+Sheet values: 80 kt level, 60 kt climb/descent, +/-500 ft/min, the transition order and predominance. Simulator choices: all tolerances,
+the 95 kt / 60 kt points in the attitude-speed exercise, the ~5 % PG step, gust sizes and the score weights. In this flight model
+Vpm (minimum power speed) is about 50-55 kt. Your instructor's briefing comes first.
+
 ## The levels
 
 | Level | You fly | What is checked |

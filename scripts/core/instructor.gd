@@ -10,8 +10,8 @@ var message_time := 0.0
 var last_key := ""
 var _cool := {}
 var _prev := {}
-var _voice_id := ""
-var _voice_checked := false
+var lang := "en"                 # voice language for spoken cues ("fr" in the French school briefings)
+var _voices := {}
 
 func say(key: String, text: String, cooldown := 25.0, duration := 9.0, speech := "") -> bool:
 	if not enabled:
@@ -39,14 +39,15 @@ func force(text: String, speech := "") -> void:
 func speak(text: String) -> void:
 	if not voice or not enabled or DisplayServer.get_name() == "headless":
 		return
-	if not _voice_checked:
-		_voice_checked = true
-		var v := DisplayServer.tts_get_voices_for_language("en")
-		if v.size() > 0:
-			_voice_id = v[0]
-	if _voice_id == "":
+	if not _voices.has(lang):
+		var v := DisplayServer.tts_get_voices_for_language(lang)
+		if v.size() == 0:
+			v = DisplayServer.tts_get_voices_for_language("en")
+		_voices[lang] = v[0] if v.size() > 0 else ""
+	var vid: String = _voices[lang]
+	if vid == "":
 		return
-	DisplayServer.tts_speak(text, _voice_id, 70, 1.0, 1.1, 0, true)
+	DisplayServer.tts_speak(text, vid, 70, 1.0, 1.1, 0, true)
 
 func update(fdm, dt: float) -> void:
 	message_time = maxf(message_time - dt, 0.0)

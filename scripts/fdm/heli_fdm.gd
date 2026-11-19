@@ -609,6 +609,17 @@ func nr_pct() -> float:
 func n2_pct() -> float:
 	return n2 / omega100 * 100.0
 
+## Slip ball (inclinometer), in g: + = ball to the RIGHT. It shows the lateral specific force
+## (what you feel on the seat): "step on the ball" - ball left = left pedal.
+## SIMPLIFICATION: this flight model's fuselage side force is small, so in forward flight a pure
+## specific-force ball would hardly move with sideslip. A sideslip term (fading in from ~0 to 30 kt)
+## is added so that about 5 deg of sideslip moves the ball one ball width (0.06 g), like a real cockpit.
+func ball_g() -> float:
+	var sf := world_to_aero((force_world + Vector3(0.0, mass * G, 0.0)) / mass)
+	var beta := rad_to_deg(atan2(air_body.y, maxf(absf(air_body.x), 0.1)))
+	var fade := clampf(air_body.x / (30.0 * KT), 0.0, 1.0)
+	return clampf(-sf.y / G + 0.012 * beta * fade, -0.5, 0.5)
+
 func vs_fpm() -> float:
 	return vel.y / FT * 60.0
 
