@@ -5,7 +5,7 @@ Sources (all free/open):
   - Satellite photo: Sentinel-2 L2A true colour, 1 June 2025, tile 29SPS (sentinel-cogs, Element84/AWS)
   - Land cover: ESA WorldCover 2021 v200 10 m (esa-worldcover)
   - Airport layout, buildings, names: OpenStreetMap via Overture Maps 2026-11-18.0 (ODbL)
-Output: data/maps/khouribga/{height.bin, ortho_jpg.bin, map.json}
+Output: data/maps/khouribga/{height.bin, map.json}; the photos come from photo_composite.py
 
 Usage: python build_khouribga.py <dl_dir> <infra.json> <buildings.json> <out_dir>
 (dl_dir holds the two Copernicus tiles; infra/buildings json come from the Overture query in overture_query.py)
@@ -23,17 +23,16 @@ from shapely import transform as shp_transform2
 from shapely.prepared import prep
 from PIL import Image
 
-DL, INFRA, BLD, OUT = sys.argv[1:5]
+DL, INFRA, BLD, OUT, ROADS = sys.argv[1:6]
 os.makedirs(OUT, exist_ok=True)
 
 # World origin = the OSM helipad on the airport's main apron ("Main helipad" in the sim).
 LON0, LAT0 = -6.9504834, 32.8594064
 SIZE = 16384.0
-N = 513
+N = 1025          # 16 m grid (DEM is 30 m: cubic resampling gives smooth hills instead of facets)
 CELL = SIZE / (N - 1)
 HALF = SIZE / 2
 HSCALE = 0.05     # height.bin: uint16 * 0.05 m
-ORTHO_PX = 2048   # 8 m per pixel
 
 local = CRS.from_proj4(f"+proj=aeqd +lat_0={LAT0} +lon_0={LON0} +x_0=0 +y_0=0 +ellps=WGS84 +units=m")
 to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
@@ -53,7 +52,7 @@ dem = np.full((N, N), np.nan, dtype=np.float32)
 for t in ["dem_w008.tif", "dem_w007.tif"]:
     with rasterio.open(os.path.join(DL, t)) as src:
         tmp = np.full((N, N), np.nan, dtype=np.float32)
-        reproject(rasterio.band(src, 1), tmp, dst_transform=dst_tf, dst_crs=local, resampling=Resampling.bilinear, dst_nodata=np.nan)
+        reproject(rasterio.band(src, 1), tmp, dst_transform=dst_tf, dst_crs=local, resampling=Resampling.cubic, dst_nodata=np.nan)
         dem = np.where(np.isnan(dem), tmp, dem)
 assert not np.isnan(dem).any(), "DEM gap"
 # row r of dem is north = HALF - r*CELL  ->  z = -north = -HALF + r*CELL : row index == j directly.
@@ -81,14 +80,11 @@ pz = prep(flat_zone)
 
 # flatten: inside the zone, heights follow a smooth surface (runway: straight slope between its ends)
 from scipy.ndimage import gaussian_filter, distance_transform_edt
-smooth = gaussian_filter(heights, 5.0)
+import shapely
+smooth = gaussian_filter(heights, 160.0 / CELL)
 gx = -HALF + np.arange(N) * CELL
-mask = np.zeros((N, N), bool)
-for j in range(N):
-    north = -(-HALF + j * CELL)
-    for i in range(N):
-        if pz.contains(Point(gx[i], north)):
-            mask[j, i] = True
+GX, GN = np.meshgrid(gx, -gx)          # east, north for [j, i]
+mask = shapely.contains_xy(flat_zone, GX, GN)
 def grid_h(arr, e, n):
     fi = (e + HALF) / CELL; fj = (-n + HALF) / CELL
     i, j = int(fi), int(fj); a, b = fi - i, fj - j
@@ -97,17 +93,13 @@ h_sw, h_ne = grid_h(smooth, *sw), grid_h(smooth, *ne)
 print("runway ends %.1f / %.1f m (%.2f%% slope)" % (h_sw, h_ne, (h_ne - h_sw) / rw_len * 100))
 target = smooth.copy()
 u = (ne - sw) / rw_len
-for j in range(N):
-    north = -(-HALF + j * CELL)
-    for i in range(N):
-        if mask[j, i]:
-            p = np.array([gx[i], north]) - sw
-            s = np.clip(p @ u, 0, rw_len)
-            d = abs(p[0] * u[1] - p[1] * u[0])
-            if d < 120:
-                lin = h_sw + (h_ne - h_sw) * s / rw_len
-                w = np.clip((d - 60) / 60, 0, 1)
-                target[j, i] = lin * (1 - w) + smooth[j, i] * w
+PX_, PY_ = GX - sw[0], GN - sw[1]
+S_ = np.clip(PX_ * u[0] + PY_ * u[1], 0, rw_len)
+D_ = np.abs(PX_ * u[1] - PY_ * u[0])
+lin = h_sw + (h_ne - h_sw) * S_ / rw_len
+w_ = np.clip((D_ - 60) / 60, 0, 1)
+sel = mask & (D_ < 120)
+target[sel] = (lin * (1 - w_) + smooth * w_)[sel]
 dist = distance_transform_edt(~mask) * CELL
 blend = np.clip(dist / 96.0, 0, 1)
 blend = blend * blend * (3 - 2 * blend)
@@ -123,18 +115,25 @@ with rasterio.open(WC) as src:
 vals, cnt = np.unique(lc, return_counts=True)
 print("land cover classes", dict(zip(vals.tolist(), (cnt / cnt.sum()).round(3).tolist())))
 
-# ---------------------------------------------------------------- satellite photo (Sentinel-2 TCI)
-TCI = "/vsicurl/https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/29/S/PS/2025/6/S2A_29SPS_20250601_0_L2A/TCI.tif"
-rgb = np.zeros((3, ORTHO_PX, ORTHO_PX), np.uint8)
-o_tf = from_origin(-HALF, HALF, SIZE / ORTHO_PX, SIZE / ORTHO_PX)
-with rasterio.open(TCI) as src:
-    for b in range(3):
-        reproject(rasterio.band(src, b + 1), rgb[b], dst_transform=o_tf, dst_crs=local, resampling=Resampling.cubic)
-img = Image.fromarray(np.transpose(rgb, (1, 2, 0)))
-buf = io.BytesIO()
-img.save(buf, "JPEG", quality=86)
-open(os.path.join(OUT, "ortho_jpg.bin"), "wb").write(buf.getvalue())
-img.resize((512, 512)).save(os.path.join(DL, "ortho_preview.png"))
+# ---------------------------------------------------------------- roads and railways (OSM via Overture)
+ROAD_W = {"motorway": 14, "trunk": 12, "primary": 10, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
+          "living_street": 5, "service": 4.5, "track": 3.5, "unknown": 5, "pedestrian": 4, "standard_gauge": 4}
+ROAD_KIND = {"track": 1, "standard_gauge": 2}     # 0 asphalt, 1 dirt track, 2 railway
+roads = []
+road_geoms = []
+for r in json.load(open(ROADS)):
+    w = ROAD_W.get(r["class"])
+    if w is None:
+        continue
+    g = geom_local(WKT.loads(r["wkt"]))
+    if g.geom_type != "LineString" or g.length < 3:
+        continue
+    if paved.buffer(5).contains(g):
+        continue            # airport taxiways come from the airport layer
+    roads.append([ROAD_KIND.get(r["class"], 0), w, [[round(x, 1), round(-y, 1)] for x, y in g.coords]])
+    road_geoms.append(g.buffer(w / 2 + 1.5))
+road_zone = prep(unary_union(road_geoms))
+print("roads:", len(roads), "km %.0f" % (sum(LineString([(p[0], p[1]) for p in r[2]]).length for r in roads) / 1000))
 
 # ---------------------------------------------------------------- buildings
 rng = np.random.default_rng(206)
@@ -155,7 +154,7 @@ for b in bld:
 osm_union = prep(unary_union(osm_polys).buffer(4)) if osm_polys else None
 keep_out = prep(unary_union([LineString([sw, ne]).buffer(RW_W / 2 + 60, cap_style=2), paved.buffer(18.0), Point(0, 0).buffer(60), Point(70, -70).buffer(130)]))
 # estimated houses: one block per 22 m cell where WorldCover says "built-up" (class 50)
-STEP = 22.0
+STEP = 15.0       # Moroccan towns are dense: terraced 1-4 storey houses
 cells = int(SIZE / STEP)
 lc_res = SIZE / LC_N
 for cj in range(cells):
@@ -168,14 +167,14 @@ for cj in range(cells):
         k = max(1, int(STEP / lc_res))
         patch = lc[j0:j0 + k, i0:i0 + k]
         frac = (patch == 50).mean() if patch.size else 0
-        if frac < 0.55 or rng.random() > 0.8:
+        if frac < 0.5 or rng.random() > 0.9:
             continue
         p = Point(e, n)
-        if keep_out.contains(p) or (osm_union and osm_union.contains(p)):
+        if keep_out.contains(p) or road_zone.contains(p) or (osm_union and osm_union.contains(p)):
             continue
-        w = rng.uniform(9, 17); d = rng.uniform(9, 17)
+        w = rng.uniform(11, 15); d = rng.uniform(11, 15)
         storeys = rng.choice([1, 2, 2, 3, 3, 4], p=[0.18, 0.3, 0.2, 0.17, 0.1, 0.05])
-        blds.append([e + rng.uniform(-2, 2), -n + rng.uniform(-2, 2), w, d, 0.0, float(storeys * 3.1), 1])
+        blds.append([e + rng.uniform(-1, 1), -n + rng.uniform(-1, 1), w, d, 0.0, float(storeys * 3.1), 1])
 est = [b for b in blds if b[6] == 1]
 rng.shuffle(est)   # random order: the low graphics presets draw only the first part
 blds = [b for b in blds if b[6] == 0] + est
@@ -193,7 +192,7 @@ for cj in range(tc):
         if lc[min(lj, LC_N - 1), min(li, LC_N - 1)] != 10 or rng.random() > 0.55:
             continue
         p = Point(e, n)
-        if keep_out.contains(p):
+        if keep_out.contains(p) or road_zone.contains(p):
             continue
         trees.append([round(e + rng.uniform(-5, 5), 1), round(-n + rng.uniform(-5, 5), 1), round(float(rng.uniform(0.7, 1.4)), 2)])
 print("trees:", len(trees))
@@ -242,7 +241,8 @@ meta = {
     "origin_lat": LAT0, "origin_lon": LON0, "size_m": SIZE, "n": N, "height_scale": HSCALE,
     "sources": {
         "elevation": "Copernicus GLO-30 DEM (ESA, 30 m) - surface model, flattened by the sim on paved areas",
-        "photo": "Sentinel-2 L2A true colour 2025-06-01 (ESA Copernicus, 10 m)",
+        "photo": "Sentinel-2 L2A surface reflectance, median of 4 clear days per season (spring: Mar-Apr 2025, summer: Jul-Aug 2025), natural colour, 10 m",
+        "roads": "OpenStreetMap contributors (ODbL) via Overture Maps 2026-11-18.0",
         "land_cover": "ESA WorldCover 2021 v200 (10 m): built-up -> estimated houses, tree cover -> trees",
         "airport": "OpenStreetMap contributors (ODbL) via Overture Maps 2026-11-18.0; runway size from OpenAIP",
     },
@@ -259,6 +259,8 @@ meta = {
     # that stands 40 m north of the real pad. "Apron helipad" is the real one (OSM position).
     "pads": {"Main helipad": [MAIN[0], MAIN[1], 26.0], "Apron helipad": [0.0, 0.0, 15.0], "Field LZ": [field[0], field[1], 20.0], "Pinnacle LZ": [pin[0], pin[1], 9.0]},
     "landmarks": landmarks,
+    "roads": roads,
+    "photos": {"spring": "photo_spring_jpg.bin", "summer": "photo_summer_jpg.bin"},
     "buildings": [[round(v, 2) if isinstance(v, float) else v for v in b] for b in blds],
     "trees": trees,
 }

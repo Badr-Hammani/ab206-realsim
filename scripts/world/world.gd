@@ -13,6 +13,7 @@ var windsocks: Array[Node3D] = []
 var tree_capacity := 9000
 var hover_spot := Vector3.ZERO       # lesson L3 hover-taxi target, 22 m north of the main pad centre
 var map_id := "valle"
+var season := "summer"
 var real_map                         # khouribga.gd when a real map is loaded
 var surface_lift := 0.0              # pad decks and painted marks raised above apron meshes on real maps
 
@@ -23,6 +24,7 @@ func build(id := "valle") -> void:
 	terrain.name = "Terrain"
 	if map_id != "valle":
 		terrain.map_dir = "res://data/maps/" + map_id
+		terrain.season = season
 	add_child(terrain)
 	terrain.generate()
 	if map_id != "valle":
@@ -38,7 +40,11 @@ func build(id := "valle") -> void:
 			pd["pos"] = pd["pos"] + Vector3(0, deck, 0)
 	_build_training_marks()
 	if map_id == "khouribga":
-		env.fog_light_color = Color(0.80, 0.76, 0.70)   # dry, dusty plateau haze
+		env.fog_light_color = Color(0.74, 0.76, 0.78)   # dry plateau haze, slightly dusty
+		var psm := env.sky.sky_material as ProceduralSkyMaterial
+		psm.sky_top_color = Color(0.30, 0.50, 0.80)
+		psm.sky_horizon_color = Color(0.74, 0.77, 0.80)
+		psm.ground_horizon_color = Color(0.66, 0.60, 0.52)
 		real_map = Khouribga.new()
 		real_map.build(self)
 	else:
@@ -49,9 +55,16 @@ func build(id := "valle") -> void:
 func place_name() -> String:
 	return "the Khouribga plateau" if map_id == "khouribga" else "the valley floor"
 
-func set_building_share(f: float) -> void:
+## Graphics preset 0-2: draw distances of houses, trees and streets on real maps.
+func set_draw_preset(p: int) -> void:
 	if real_map:
-		real_map.set_building_share(f)
+		real_map.set_draw_distance(p)
+
+## Photo season of a real map ("spring" / "summer"); no reload needed.
+func set_season(s: String) -> void:
+	season = s
+	if terrain:
+		terrain.set_season(s)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()

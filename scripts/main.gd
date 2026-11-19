@@ -69,6 +69,7 @@ func _ready() -> void:
 	world = World.new()
 	world.name = "World"
 	add_child(world)
+	world.season = _startup_season()
 	world.build(_startup_map())
 	fdm.ground = world.terrain
 	refs = HoverRefs.new()
@@ -254,6 +255,18 @@ func _startup_map() -> String:
 		return str(cf.get_value("world", "map", "valle"))
 	return "valle"
 
+## Photo season of real maps: saved choice, else by today's date (Dec-May green, Jun-Nov dry).
+func _startup_season() -> String:
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) == OK and cf.has_section_key("world", "season"):
+		return str(cf.get_value("world", "season"))
+	var m: int = Time.get_date_dict_from_system()["month"]
+	return "spring" if (m >= 12 or m <= 5) else "summer"
+
+func set_season(s: String) -> void:
+	world.set_season(s)
+	_save_settings()
+
 ## Switch map: saves the choice and rebuilds the whole scene (about 2-4 s on the real map).
 func set_map(id: String) -> void:
 	if id == world.map_id:
@@ -281,7 +294,6 @@ func apply_preset(i: int) -> void:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			world.sun.shadow_enabled = false
 			world.set_tree_count(1500)
-			world.set_building_share(0.3)
 			world.terrain.set_detail(0)
 			cam_rig.cam.far = 7000.0
 		1:
@@ -291,7 +303,6 @@ func apply_preset(i: int) -> void:
 			world.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 			world.sun.directional_shadow_max_distance = 150.0
 			world.set_tree_count(4500)
-			world.set_building_share(0.65)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 10000.0
 		2:
@@ -301,9 +312,9 @@ func apply_preset(i: int) -> void:
 			world.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 			world.sun.directional_shadow_max_distance = 500.0
 			world.set_tree_count(9000)
-			world.set_building_share(1.0)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 12000.0
+	world.set_draw_preset(preset)
 	_save_settings()
 
 func preset_name() -> String:
@@ -707,6 +718,8 @@ func _save_settings() -> void:
 	cf.set_value("graphics", "preset", preset)
 	cf.set_value("world", "visibility", visibility_m)
 	cf.set_value("world", "map", world.map_id if world else "valle")
+	if world:
+		cf.set_value("world", "season", world.season)
 	if fdm:
 		cf.set_value("aircraft", "mass", fdm.mass)
 		cf.set_value("weather", "wind_from", fdm.atmo.wind_from_deg)

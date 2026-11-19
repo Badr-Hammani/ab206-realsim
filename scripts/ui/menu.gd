@@ -493,6 +493,12 @@ func _build_weather() -> void:
 	var a := _card("Air")
 	_slider_row(a, "Temperature  (ISA ±)", -30.0, 30.0, 1.0, f.atmo.temp_offset_c, "%+.0f °C", func(v: float) -> void: f.atmo.temp_offset_c = v)
 	_slider_row(a, "Visibility", 1500.0, 20000.0, 500.0, main.visibility_m, "%.0f m", func(v: float) -> void: main.set_visibility(v))
+	if main.world.map_id != "valle":
+		var sc := _card("Season", "Real satellite photos: spring = March-April 2025 (green crops), summer = July-August 2025 (dry, harvested).")
+		var items := ["spring", "summer"]
+		_row(sc, "Ground photo", "", _segmented(["Spring", "Summer"], items.find(main.world.season), func(i: int) -> void:
+			main.set_season(items[i])
+			build(), 90))
 
 func _build_settings() -> void:
 	var t := _card("Training display and instructor")

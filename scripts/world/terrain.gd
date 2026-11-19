@@ -12,6 +12,9 @@ var HALF := SIZE * 0.5
 var map_dir := ""              # "" = procedural valley, else e.g. "res://data/maps/khouribga"
 var map_meta := {}             # map.json of a real map
 var ortho: ImageTexture        # satellite photo of a real map
+var season := "summer"         # which photo of a real map: "spring" (green fields) or "summer" (dry)
+var photo_material: ShaderMaterial
+var tiles: Array[MeshInstance3D] = []
 const BUCKET := 64.0           # building lookup grid (m)
 var _bld_grid := {}            # Vector2i -> Array of building indices
 
@@ -67,16 +70,121 @@ func load_map(dir: String) -> bool:
 	heights.resize(N * N)
 	for k in N * N:
 		heights[k] = raw.decode_u16(k * 2) * sc
-	var img := Image.new()
-	if img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(dir + "/ortho_jpg.bin")) == OK:
-		img.generate_mipmaps()
-		ortho = ImageTexture.create_from_image(img)
+	ortho = _load_photo(season)
 	var pd: Dictionary = meta["pads"]
 	for pad_name in pd:
 		var a: Array = pd[pad_name]
 		_add_pad(pad_name, Vector3(a[0], 0.0, a[1]), a[2], 30.0 if a[2] > 12.0 else 18.0, 0.0)
-	_build_mesh()
+	_build_tiled_mesh()
 	return true
+
+func _load_photo(s: String) -> ImageTexture:
+	var photos: Dictionary = map_meta.get("photos", {})
+	var f: String = photos.get(s, photos.values()[0] if photos.size() > 0 else "")
+	var img := Image.new()
+	if f == "" or img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + f)) != OK:
+		return null
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+## Swap the satellite photo (real maps only) without reloading.
+func set_season(s: String) -> void:
+	season = s
+	if map_dir == "" or photo_material == null:
+		return
+	var t := _load_photo(s)
+	if t:
+		ortho = t
+		photo_material.set_shader_parameter("photo", t)
+
+## Draw distances (m) of the three terrain detail levels: 16 m grid near, 32 m, 64 m far.
+const LOD_RANGES := [2000.0, 5000.0]
+
+## Real maps: the grid is cut into 2 km tiles, each with three detail levels that Godot swaps
+## by distance (visibility ranges). Skirts hide the small cracks where two levels meet.
+func _build_tiled_mesh() -> void:
+	var norms := PackedVector3Array()
+	norms.resize(N * N)
+	for j in N:
+		var jd := maxi(j - 1, 0)
+		var ju := mini(j + 1, N - 1)
+		for i in N:
+			var il := maxi(i - 1, 0)
+			var ir := mini(i + 1, N - 1)
+			var hx := heights[j * N + ir] - heights[j * N + il]
+			var hz := heights[ju * N + i] - heights[jd * N + i]
+			norms[j * N + i] = Vector3(-hx / ((ir - il) * CELL), 1.0, -hz / ((ju - jd) * CELL)).normalized()
+	photo_material = ShaderMaterial.new()
+	photo_material.shader = load("res://shaders/terrain_photo.gdshader")
+	photo_material.set_shader_parameter("photo", ortho)
+	photo_material.set_shader_parameter("map_size", SIZE)
+	var T := 128
+	var nt := (N - 1) / T
+	for ty in nt:
+		for tx in nt:
+			var lods := [1, 2, 4]
+			for li in lods.size():
+				var mi := _tile_mesh(tx * T, ty * T, T, lods[li], norms)
+				mi.visibility_range_begin = 0.0 if li == 0 else LOD_RANGES[li - 1]
+				mi.visibility_range_end = LOD_RANGES[li] if li < 2 else 0.0
+				mi.material_override = photo_material
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				add_child(mi)
+				tiles.append(mi)
+	mesh_instance = tiles[0]
+	_build_far_plane()
+
+func _tile_mesh(i0: int, j0: int, T: int, step: int, norms: PackedVector3Array) -> MeshInstance3D:
+	var n := T / step + 1
+	var cx := -HALF + (i0 + T * 0.5) * CELL
+	var cz := -HALF + (j0 + T * 0.5) * CELL
+	var verts := PackedVector3Array()
+	var nrm := PackedVector3Array()
+	var idx := PackedInt32Array()
+	verts.resize(n * n)
+	nrm.resize(n * n)
+	for b in n:
+		var j := j0 + b * step
+		for a in n:
+			var i := i0 + a * step
+			verts[b * n + a] = Vector3(-HALF + i * CELL - cx, heights[j * N + i], -HALF + j * CELL - cz)
+			nrm[b * n + a] = norms[j * N + i]
+	for b in n - 1:
+		for a in n - 1:
+			var p := b * n + a
+			idx.append_array([p, p + 1, p + n + 1, p, p + n + 1, p + n])
+	# skirts: hang each border 6 m down so a coarser neighbour never shows a gap
+	var border: Array[int] = []
+	for a in n:
+		border.append(a)
+	for b in range(1, n):
+		border.append(b * n + n - 1)
+	for a in range(n - 2, -1, -1):
+		border.append((n - 1) * n + a)
+	for b in range(n - 2, -1, -1):
+		border.append(b * n)
+	var base := verts.size()
+	for k in border.size():
+		verts.append(verts[border[k]] - Vector3(0, 6.0 * step, 0))
+		nrm.append(nrm[border[k]])
+	for k in border.size():
+		var k2 := (k + 1) % border.size()
+		var a0: int = border[k]
+		var a1: int = border[k2]
+		var d0 := base + k
+		var d1 := base + k2
+		idx.append_array([a0, d0, a1, a1, d0, d1, a0, a1, d0, a1, d1, d0])   # both sides
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = nrm
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = Vector3(cx, 0.0, cz)
+	return mi
 
 func generate() -> void:
 	if map_dir != "":
@@ -219,6 +327,9 @@ func _build_mesh() -> void:
 	mesh_instance.material_override = mat
 	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mesh_instance)
+	_build_far_plane()
+
+func _build_far_plane() -> void:
 	# far ground ring so the horizon never shows a void
 	var far := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
@@ -232,12 +343,14 @@ func _build_mesh() -> void:
 		hmin -= 3.0
 	far.position = Vector3(0, hmin, 0)
 	var fm := StandardMaterial3D.new()
-	fm.albedo_color = Color(0.58, 0.40, 0.28) if ortho else Color(0.36, 0.40, 0.33)
+	fm.albedo_color = Color(0.60, 0.50, 0.39) if ortho else Color(0.36, 0.40, 0.33)
 	fm.roughness = 1.0
 	far.material_override = fm
 	far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(far)
 
 func set_detail(level: int) -> void:
-	if mesh_instance and mesh_instance.material_override:
+	if photo_material:
+		photo_material.set_shader_parameter("detail", level)
+	elif mesh_instance and mesh_instance.material_override:
 		(mesh_instance.material_override as ShaderMaterial).set_shader_parameter("detail", level)

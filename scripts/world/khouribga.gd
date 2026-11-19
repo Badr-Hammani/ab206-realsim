@@ -5,8 +5,16 @@ extends RefCounted
 
 var world            # world.gd
 var terrain          # terrain.gd (real map loaded)
-var buildings: MultiMeshInstance3D
-var building_total := 0
+const TILE := 1024.0
+## Draw distances per graphics preset (Low, Medium, High), metres. 0 = no limit.
+const RANGE_HOUSES := [2000.0, 3500.0, 7000.0]
+const RANGE_TREES := [1500.0, 3000.0, 5000.0]
+const RANGE_STREETS := [2500.0, 4000.0, 7000.0]
+const RANGE_MAIN_ROADS := [5000.0, 9000.0, 0.0]
+var house_tiles: Array[GeometryInstance3D] = []
+var tree_tiles: Array[GeometryInstance3D] = []
+var street_tiles: Array[GeometryInstance3D] = []
+var main_road_tiles: Array[GeometryInstance3D] = []
 
 func build(w) -> void:
 	world = w
@@ -36,8 +44,31 @@ func build(w) -> void:
 		ws.position = Vector3(wp.x, terrain.height_at(wp.x, wp.y), wp.y)
 		world.add_child(ws)
 		world.windsocks.append(ws)
+	var t0 := Time.get_ticks_msec()
+	_roads(terrain.map_meta.get("roads", []))
+	var t1 := Time.get_ticks_msec()
 	_buildings(terrain.map_meta["buildings"])
+	var t2 := Time.get_ticks_msec()
 	_trees(terrain.map_meta["trees"])
+	print("Khouribga map: roads %d ms, houses %d ms, trees %d ms" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2])
+
+static func _tile_key(x: float, z: float) -> Vector2i:
+	return Vector2i(floori(x / TILE), floori(z / TILE))
+
+static func _tile_centre(k: Vector2i) -> Vector3:
+	return Vector3((k.x + 0.5) * TILE, 0.0, (k.y + 0.5) * TILE)
+
+## Distance culling per preset: far houses, trees and streets are skipped (the photo shows them).
+func set_draw_distance(preset: int) -> void:
+	var p := clampi(preset, 0, 2)
+	for t in house_tiles:
+		t.visibility_range_end = RANGE_HOUSES[p]
+	for t in tree_tiles:
+		t.visibility_range_end = RANGE_TREES[p]
+	for t in street_tiles:
+		t.visibility_range_end = RANGE_STREETS[p]
+	for t in main_road_tiles:
+		t.visibility_range_end = RANGE_MAIN_ROADS[p]
 
 func _v2(p) -> Vector2:
 	return Vector2(float(p[0]), float(p[1]))
@@ -177,46 +208,127 @@ func _runway_number(txt: String, p: Vector2, hdg_deg: float) -> void:
 	world.add_child(l)
 
 func _buildings(list: Array) -> void:
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	var bm := BoxMesh.new()
-	bm.size = Vector3.ONE
-	mm.mesh = bm
-	mm.instance_count = list.size()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 2552
-	var palette := [Color(0.87, 0.82, 0.72), Color(0.92, 0.89, 0.83), Color(0.80, 0.68, 0.55), Color(0.86, 0.76, 0.62), Color(0.95, 0.94, 0.91), Color(0.74, 0.62, 0.50)]
+	var groups := {}
 	for k in list.size():
 		var b: Array = list[k]
-		var x := float(b[0])
-		var z := float(b[1])
-		var w := float(b[2])
-		var d := float(b[3])
-		var yaw := deg_to_rad(float(b[4]))
-		var h := float(b[5]) + 0.6
-		var g := minf(minf(_gh(x - w * 0.4, z - d * 0.4), _gh(x + w * 0.4, z + d * 0.4)), _gh(x, z)) - 0.6
-		var basis := Basis(Vector3.UP, PI * 0.5 - yaw).scaled(Vector3(w, h, d))
-		mm.set_instance_transform(k, Transform3D(basis, Vector3(x, g + h * 0.5, z)))
-		mm.set_instance_color(k, palette[rng.randi() % palette.size()].darkened(rng.randf() * 0.12))
-		var ax := absf(cos(PI * 0.5 - yaw)) * w + absf(sin(PI * 0.5 - yaw)) * d
-		var az := absf(sin(PI * 0.5 - yaw)) * w + absf(cos(PI * 0.5 - yaw)) * d
-		terrain.add_building(Vector3(x, g, z), Vector3(ax, h, az))
-	buildings = MultiMeshInstance3D.new()
-	buildings.multimesh = mm
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.95
-	buildings.material_override = mat
-	buildings.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	world.add_child(buildings)
-	building_total = list.size()
+		var key := _tile_key(float(b[0]), float(b[1]))
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(b)
+	var bm := BoxMesh.new()
+	bm.size = Vector3.ONE
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/building.gdshader")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2552
+	# Moroccan town colours: white and cream render, ochre, sand, a few salmon/pink walls
+	var palette := [Color(0.80, 0.77, 0.70), Color(0.84, 0.83, 0.80), Color(0.76, 0.64, 0.50), Color(0.79, 0.70, 0.57), Color(0.74, 0.57, 0.48), Color(0.68, 0.58, 0.47)]
+	for key in groups:
+		var g: Array = groups[key]
+		var c := _tile_centre(key)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = bm
+		mm.instance_count = g.size()
+		for k in g.size():
+			var b: Array = g[k]
+			var x := float(b[0])
+			var z := float(b[1])
+			var w := float(b[2])
+			var d := float(b[3])
+			var yaw := deg_to_rad(float(b[4]))
+			var h := float(b[5]) + 0.6
+			var gnd := minf(minf(_gh(x - w * 0.4, z - d * 0.4), _gh(x + w * 0.4, z + d * 0.4)), _gh(x, z)) - 0.6
+			var basis := Basis(Vector3.UP, PI * 0.5 - yaw).scaled(Vector3(w, h, d))
+			mm.set_instance_transform(k, Transform3D(basis, Vector3(x - c.x, gnd + h * 0.5, z - c.z)))
+			var col: Color = palette[rng.randi() % palette.size()].darkened(rng.randf() * 0.10)
+			mm.set_instance_custom_data(k, Color(col.r, col.g, col.b, h))
+			var ax := absf(cos(PI * 0.5 - yaw)) * w + absf(sin(PI * 0.5 - yaw)) * d
+			var az := absf(sin(PI * 0.5 - yaw)) * w + absf(cos(PI * 0.5 - yaw)) * d
+			terrain.add_building(Vector3(x, gnd, z), Vector3(ax, h, az))
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		mi.material_override = mat
+		mi.position = c
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.add_child(mi)
+		house_tiles.append(mi)
 
-## Share of the (randomly ordered) estimated houses drawn; real OSM buildings come first and always show.
-func set_building_share(f: float) -> void:
-	if buildings:
-		buildings.multimesh.visible_instance_count = int(building_total * clampf(f, 0.05, 1.0))
+## Roads and railways: draped strips, one mesh per 1 km tile and road type.
+func _roads(list: Array) -> void:
+	var groups := {}       # [tile, kind, major] -> SurfaceTool
+	var mats := {}
+	for r in list:
+		var kind := int(r[0])
+		var w := float(r[1])
+		var pts_raw: Array = r[2]
+		var major := w >= 7.0 or kind == 2
+		var key := [_tile_key(float(pts_raw[0][0]) * 0.5, float(pts_raw[0][1]) * 0.5), kind, major]   # 2 km tiles
+		if not groups.has(key):
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			groups[key] = st
+		var pts: Array[Vector2] = []
+		for p in pts_raw:
+			pts.append(_v2(p))
+		_strip(groups[key], pts, w, 0.05 + (0.01 if major else 0.0), _tile_centre(key[0]) * 2.0, 10.0)
+	for key in groups:
+		var kind: int = key[1]
+		if not mats.has(kind):
+			mats[kind] = _paved_material(3 + kind, 1.0, 1.0)
+		var mi := MeshInstance3D.new()
+		mi.mesh = (groups[key] as SurfaceTool).commit()
+		mi.material_override = mats[kind]
+		mi.position = _tile_centre(key[0]) * 2.0
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.add_child(mi)
+		if key[2]:
+			main_road_tiles.append(mi)
+		else:
+			street_tiles.append(mi)
 
+## Appends a strip of width w along pts (sampled every `step` m) to st, relative to origin o.
+func _strip(st: SurfaceTool, pts: Array[Vector2], w: float, lift: float, o: Vector3, step: float) -> void:
+	var dense: Array[Vector2] = []
+	for k in pts.size() - 1:
+		var seg := pts[k + 1] - pts[k]
+		var n := maxi(1, int(ceil(seg.length() / step)))
+		for s in n:
+			dense.append(pts[k] + seg * (float(s) / n))
+	dense.append(pts[pts.size() - 1])
+	var along := 0.0
+	var pl0 := Vector3.ZERO
+	var pr0 := Vector3.ZERO
+	var v0 := 0.0
+	for k in dense.size():
+		var d := Vector2.ZERO
+		if k > 0:
+			d += (dense[k] - dense[k - 1]).normalized()
+		if k < dense.size() - 1:
+			d += (dense[k + 1] - dense[k]).normalized()
+		if d.length_squared() < 1e-6:
+			continue
+		d = d.normalized()
+		var side := Vector2(-d.y, d.x) * (w * 0.5)
+		if k > 0:
+			along += dense[k].distance_to(dense[k - 1])
+		var pl := dense[k] + side
+		var pr := dense[k] - side
+		var vl := Vector3(pl.x - o.x, _gh(pl.x, pl.y) + lift, pl.y - o.z)
+		var vr := Vector3(pr.x - o.x, _gh(pr.x, pr.y) + lift, pr.y - o.z)
+		if k > 0:
+			# front faces point up (same order as the runway strips)
+			for t in [[pl0, -w * 0.5, v0], [pr0, w * 0.5, v0], [vr, w * 0.5, along], [pl0, -w * 0.5, v0], [vr, w * 0.5, along], [vl, -w * 0.5, along]]:
+				st.set_uv(Vector2(t[1], t[2]))
+				st.set_uv2(Vector2(w, 0.0))
+				st.set_normal(Vector3.UP)
+				st.add_vertex(t[0])
+		pl0 = vl
+		pr0 = vr
+		v0 = along
+
+## Low-poly broadleaf tree (olive / eucalyptus look): trunk and three overlapping canopy lobes.
 func _tree_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -224,51 +336,69 @@ func _tree_mesh() -> ArrayMesh:
 	for i in seg:
 		var a0 := TAU * i / seg
 		var a1 := TAU * (i + 1) / seg
-		var r := 0.22
-		var p0 := Vector3(cos(a0) * r, 0, sin(a0) * r)
-		var p1 := Vector3(cos(a1) * r, 0, sin(a1) * r)
-		st.set_color(Color(0.40, 0.32, 0.22))
-		for v in [p0, p1 + Vector3(0, 2.6, 0), p1, p0, p0 + Vector3(0, 2.6, 0), p1 + Vector3(0, 2.6, 0)]:
+		var p0 := Vector3(cos(a0) * 0.22, 0, sin(a0) * 0.22)
+		var p1 := Vector3(cos(a1) * 0.22, 0, sin(a1) * 0.22)
+		var t0 := Vector3(cos(a0) * 0.12, 3.0, sin(a0) * 0.12)
+		var t1 := Vector3(cos(a1) * 0.12, 3.0, sin(a1) * 0.12)
+		st.set_color(Color(0.38, 0.30, 0.21))
+		for v in [p0, t1, p1, p0, t0, t1]:
 			st.add_vertex(v)
-	# round canopy (olive / eucalyptus look): two rings of a low-poly ball
-	var c := Vector3(0, 4.3, 0)
-	var rr := 2.6
-	var top := c + Vector3(0, 2.2, 0)
-	var bot := c + Vector3(0, -1.6, 0)
-	for i in 8:
-		var a0 := TAU * i / 8.0
-		var a1 := TAU * (i + 1) / 8.0
-		var q0 := c + Vector3(cos(a0) * rr, 0, sin(a0) * rr)
-		var q1 := c + Vector3(cos(a1) * rr, 0, sin(a1) * rr)
-		st.set_color(Color(0.24, 0.31, 0.17))
-		for v in [q0, top, q1]:
-			st.add_vertex(v)
-		st.set_color(Color(0.19, 0.25, 0.13))
-		for v in [q0, q1, bot]:
-			st.add_vertex(v)
+	var lobes := [[Vector3(0, 4.6, 0), 2.4, Color(0.26, 0.33, 0.18)], [Vector3(1.0, 4.0, 0.5), 1.7, Color(0.22, 0.30, 0.15)], [Vector3(-0.8, 4.2, -0.7), 1.8, Color(0.29, 0.35, 0.20)]]
+	for lb in lobes:
+		var c: Vector3 = lb[0]
+		var r: float = lb[1]
+		var col: Color = lb[2]
+		var rings := 4
+		var segs := 8
+		for ri in rings:
+			var th0 := PI * ri / rings
+			var th1 := PI * (ri + 1) / rings
+			for si in segs:
+				var ph0 := TAU * si / segs
+				var ph1 := TAU * (si + 1) / segs
+				var q := func(th: float, ph: float) -> Vector3:
+					return c + Vector3(sin(th) * cos(ph) * r, cos(th) * r * 0.8, sin(th) * sin(ph) * r)
+				var a: Vector3 = q.call(th0, ph0)
+				var b2: Vector3 = q.call(th0, ph1)
+				var cc: Vector3 = q.call(th1, ph0)
+				var d: Vector3 = q.call(th1, ph1)
+				var shade := 1.0 - 0.25 * float(ri) / rings
+				st.set_color(col * shade)
+				for v in [a, d, b2, a, cc, d]:
+					st.add_vertex(v)
 	st.generate_normals()
 	return st.commit()
 
 func _trees(list: Array) -> void:
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _tree_mesh()
-	mm.instance_count = list.size()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 778
-	for k in list.size():
-		var t: Array = list[k]
-		var s := float(t[2])
-		var x := float(t[0])
-		var z := float(t[1])
-		mm.set_instance_transform(k, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.3), s)), Vector3(x, _gh(x, z) - 0.2, z)))
-	var mi := MultiMeshInstance3D.new()
-	mi.multimesh = mm
+	var groups := {}
+	for t in list:
+		var key := _tile_key(float(t[0]), float(t[1]))
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(t)
+	var mesh := _tree_mesh()
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.roughness = 1.0
-	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	world.add_child(mi)
-	world.trees = mi
-	world.tree_capacity = list.size()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 778
+	for key in groups:
+		var g: Array = groups[key]
+		var c := _tile_centre(key)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = g.size()
+		for k in g.size():
+			var t: Array = g[k]
+			var s := float(t[2])
+			var x := float(t[0])
+			var z := float(t[1])
+			mm.set_instance_transform(k, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.4), s)), Vector3(x - c.x, _gh(x, z) - 0.2, z - c.z)))
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		mi.material_override = mat
+		mi.position = c
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.add_child(mi)
+		tree_tiles.append(mi)
