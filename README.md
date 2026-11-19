@@ -24,6 +24,13 @@ The phone tilt controller (F10) and joystick setup only work in the Windows vers
 2. You start on the main helipad, engine running, rotor at 100%, collective fully down.
 3. Press **F1** at any time for the control list.
 
+## Maps: training valley or real Khouribga (new in M2.14)
+
+**Esc → Fly → Map** switches between the fictional training valley and **Khouribga GMMK**: 16 x 16 km
+of real terrain (Copernicus elevation data and a Sentinel-2 satellite photo) with runway 05/23,
+taxiways, aprons and the apron helipad from OpenStreetMap. You start on a training pad next to the apron;
+all lessons work there too. What is real and what is estimated: [docs/MAPS.md](docs/MAPS.md).
+
 ## Controls (keyboard + mouse)
 
 | Control | Keys | Notes |

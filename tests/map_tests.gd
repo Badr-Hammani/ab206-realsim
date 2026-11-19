@@ -1,0 +1,96 @@
+extends SceneTree
+## Headless tests for the real Khouribga (GMMK) map: loads the real main scene on that map and
+## checks heights against published data, ground contact on the helipad, hover power at the
+## plateau's density altitude, building collision and load time.
+## Run:  godot --headless --path . --script res://tests/map_tests.gd
+
+const DT := 1.0 / 120.0
+var main
+var passed := 0
+var failed := 0
+var load_ms := 0
+
+func check(name: String, ok: bool, detail: String) -> void:
+	if ok:
+		passed += 1
+		print("  PASS  %s  (%s)" % [name, detail])
+	else:
+		failed += 1
+		print("  FAIL  %s  (%s)" % [name, detail])
+
+var _saved_settings := ""
+
+func _initialize() -> void:
+	# the sim saves settings (including the map) as it runs: keep the user's own file untouched
+	if FileAccess.file_exists("user://settings.cfg"):
+		_saved_settings = FileAccess.get_file_as_string("user://settings.cfg")
+	var t0 := Time.get_ticks_msec()
+	main = load("res://scenes/main.tscn").instantiate()
+	main.map_override = "khouribga"
+	root.add_child(main)
+	load_ms = Time.get_ticks_msec() - t0
+
+var _started := false
+func _process(_delta: float) -> bool:
+	if not _started:
+		_started = true
+		_run()
+	return false
+
+func _steps(sec: float) -> void:
+	for k in int(sec / DT):
+		main._physics_process(DT)
+
+func _run() -> void:
+	print("AB206 REALSIM - Khouribga map tests")
+	var w = main.world
+	var t = w.terrain
+	check("[M1] map loaded", w.map_id == "khouribga" and t.N == 513 and t.ortho != null, "map %s, grid %d, photo %s, load %d ms" % [w.map_id, t.N, t.ortho != null, load_ms])
+	var pad: Vector3 = t.pads["Main helipad"]["pos"]
+	check("[M2] helipad elevation vs published 2,552 ft (778 m)", absf(pad.y - 778.0) < 15.0, "%.1f m MSL (%.0f ft)" % [pad.y, pad.y / 0.3048])
+	var rw: Dictionary = t.map_meta["airport"]["runway"]
+	var e0: Array = rw["ends"][0]
+	var e1: Array = rw["ends"][1]
+	var h0: float = t.height_at(e0[0], e0[1])
+	var h1: float = t.height_at(e1[0], e1[1])
+	var mid: float = t.height_at((e0[0] + e1[0]) * 0.5, (e0[1] + e1[1]) * 0.5)
+	check("[M3] runway 05/23 is a smooth straight slope", absf(mid - (h0 + h1) * 0.5) < 0.6 and absf(h1 - h0) < 20.0, "ends %.1f / %.1f m, middle %.1f m, heading %.1f true" % [h0, h1, mid, float(rw["true_heading"])])
+	var nb: int = t.map_meta["buildings"].size()
+	check("[M4] buildings and trees present", nb > 10000 and w.trees.multimesh.instance_count > 1000, "%d buildings, %d trees" % [nb, w.trees.multimesh.instance_count])
+	var b: Array = t.map_meta["buildings"][200]
+	var gh: float = t._grid_height(b[0], b[1])
+	var hh: float = t.height_at(b[0], b[1])
+	check("[M5] buildings are solid for the flight model", hh > gh + 2.0, "roof %.1f m above ground" % (hh - gh))
+	var t1 := Time.get_ticks_usec()
+	var acc := 0.0
+	for k in 20000:
+		acc += t.height_at(1500.0 + k * 0.1, -2500.0 + k * 0.05)
+	var us := float(Time.get_ticks_usec() - t1) / 20000.0
+	check("[M6] ground lookup stays fast with 22k buildings", us < 25.0, "%.2f us per height_at" % us)
+	# sitting on the pad, collective down
+	main.reset_on_pad()
+	_steps(6.0)
+	var f = main.fdm
+	check("[M7] stays on the helipad deck, engine running", f.on_ground and absf(f.pos.y - f.cg_height - pad.y) < 0.15 and f.vel.length() < 0.1, "skid height %.2f m above deck, speed %.2f m/s, NR %.0f%%" % [f.pos.y - f.cg_height - pad.y, f.vel.length(), f.nr_pct()])
+	# trimmed hover at 5 m (in ground effect) and at 150 m (out of ground effect) on the 778 m plateau
+	main.reset_hover()
+	var tq_ige: float = f.torque_pct
+	main._place(pad + Vector3(0, 150.0 + f.cg_height, 0), 0.0, 0.0)
+	var tq_oge: float = f.torque_pct
+	check("[M8] hover power at Khouribga elevation", tq_oge >= tq_ige and tq_oge < 100.0, "torque IGE 5 m %.0f%%, OGE %.0f%% (ISA%+.0f, %.0f kg)" % [tq_ige, tq_oge, f.atmo.temp_offset_c, f.mass])
+	main.reset_on_pad()
+	# switching map from the menu reloads the scene on the other map
+	current_scene = main
+	main.set_map("valle")
+	for k in 3:
+		await process_frame
+	var m2 = current_scene
+	check("[M9] menu map switch reloads on the training valley", m2 != null and m2 != main and m2.world.map_id == "valle" and m2.world.terrain.ortho == null, "now on %s" % (m2.world.map_id if m2 else "nothing"))
+	print("\n%d passed, %d failed" % [passed, failed])
+	if _saved_settings != "":
+		var fa := FileAccess.open("user://settings.cfg", FileAccess.WRITE)
+		fa.store_string(_saved_settings)
+		fa.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://settings.cfg"))
+	quit(0 if failed == 0 else 1)
