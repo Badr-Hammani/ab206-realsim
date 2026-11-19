@@ -160,7 +160,9 @@ func _ready() -> void:
 		phone.start()
 
 	if OS.has_feature("web"):
-		preset = 0   # web build: start on Low (phones / integrated GPUs); saved choice overrides
+		# web build: start on Low (Android phones / integrated GPUs); iPhones start on Ultra (the
+		# auto-quality check steps down if the frame rate stays low). A saved choice overrides both.
+		preset = 3 if OS.has_feature("web_ios") else 0
 	_load_settings()
 	apply_preset(preset)
 	set_visibility(visibility_m)
@@ -302,8 +304,10 @@ func set_visibility(m: float) -> void:
 
 # ---------------------------------------------------------- graphics presets
 func apply_preset(i: int) -> void:
-	preset = clampi(i, 0, 2)
+	preset = clampi(i, 0, 3)
 	var vp := get_viewport()
+	var web := OS.has_feature("web")
+	world.env.glow_enabled = preset >= 2
 	match preset:
 		0:
 			vp.scaling_3d_scale = 0.5
@@ -330,6 +334,19 @@ func apply_preset(i: int) -> void:
 			world.set_tree_count(9000)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 12000.0
+			if web:
+				vp.scaling_3d_scale = 0.6     # phone screens are 3x density: 0.6 is still sharp
+		3:
+			# Ultra: for strong phones (iPhone 15/16 class) and gaming PCs. Longest views, most
+			# houses and trees, widest live HD ground photo, 4-split shadows to 800 m.
+			vp.scaling_3d_scale = 0.75 if web else 1.0
+			vp.msaa_3d = Viewport.MSAA_2X if web else Viewport.MSAA_4X
+			world.sun.shadow_enabled = true
+			world.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+			world.sun.directional_shadow_max_distance = 800.0
+			world.set_tree_count(9000)
+			world.terrain.set_detail(1)
+			cam_rig.cam.far = 16000.0
 	world.set_draw_preset(preset)
 	_save_settings()
 
@@ -363,7 +380,7 @@ func _auto_quality(delta: float) -> void:
 		_auto_q_off = true
 
 func preset_name() -> String:
-	return ["Low", "Medium", "High"][preset]
+	return ["Low", "Medium", "High", "Ultra"][preset]
 
 # ------------------------------------------------------------------ input
 func _unhandled_input(event: InputEvent) -> void:
@@ -412,7 +429,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			hud.show_telemetry = not hud.show_telemetry
 		KEY_F7:
 			_auto_q_off = true
-			apply_preset((preset + 1) % 3)
+			apply_preset((preset + 1) % 4)
 			instructor.force("Graphics preset: " + preset_name())
 		KEY_F8:
 			if joy.visible:
@@ -794,6 +811,9 @@ func _status_text() -> String:
 func _save_settings() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("graphics", "preset", preset)
+	cf.set_value("graphics", "ultra_offered", true)   # M2.21: older saves on iPhone move up to Ultra once
+	if world and world.hd_ground:
+		cf.set_value("graphics", "hd_ground", world.hd_ground.enabled)
 	cf.set_value("world", "visibility", visibility_m)
 	cf.set_value("world", "map", world.map_id if world else "valle")
 	if world:
@@ -819,6 +839,10 @@ func _load_settings() -> void:
 	if cf.load(SETTINGS_PATH) != OK:
 		return
 	preset = cf.get_value("graphics", "preset", 1)
+	if OS.has_feature("web_ios") and not cf.has_section_key("graphics", "ultra_offered"):
+		preset = 3
+	if world and world.hd_ground:
+		world.hd_ground.set_enabled(cf.get_value("graphics", "hd_ground", true))
 	visibility_m = cf.get_value("world", "visibility", 12000.0)
 	fdm.set_mass(cf.get_value("aircraft", "mass", fdm.mass))
 	fdm.atmo.wind_from_deg = cf.get_value("weather", "wind_from", 270.0)

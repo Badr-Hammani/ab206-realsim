@@ -20,8 +20,8 @@ var proj := {}
 var cache := {}               # "z/x/y" -> ImageTexture
 var order: Array[String] = [] # LRU, oldest first
 var failed := {}              # "z/x/y" -> retry time (msec)
-var pending := {}             # "z/x/y" -> HTTPRequest
-var free_req: Array[HTTPRequest] = []
+const TileFetch := preload("res://scripts/world/tile_fetch.gd")
+var fetch                     # tile_fetch.gd: HTTPRequest on PC, browser <img> loading on the web
 var fail_count := 0
 var ok_count := 0
 var _want: Array = []         # [[dist, key, z, x, y]] wanted this frame
@@ -32,12 +32,14 @@ func setup(p: Dictionary) -> void:
 	proj = p
 	lat0 = float(p.get("lat0", 0.0))
 	lon0 = float(p.get("lon0", 0.0))
-	for i in MAX_REQ:
-		var r := HTTPRequest.new()
-		r.timeout = 12.0
-		add_child(r)
-		r.request_completed.connect(_done.bind(r))
-		free_req.append(r)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--hd-url="):
+			url = a.substr(9)        # test server, e.g. http://127.0.0.1:8765/tile.jpg?%d/%d/%d
+	fetch = TileFetch.new()
+	fetch.max_req = MAX_REQ
+	add_child(fetch)
+	fetch.tile_ready.connect(_got)
+	fetch.tile_failed.connect(_fail)
 
 func active() -> bool:
 	return enabled and proj.has("fwd_e")
@@ -151,41 +153,24 @@ func _touch(key: String) -> void:
 		order.append(key)
 
 func _process(_delta: float) -> void:
-	if _want.is_empty():
+	if _want.is_empty() or fetch == null:
 		return
 	_want.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) < float(q[0]))
 	var now := Time.get_ticks_msec()
 	for w in _want:
-		if free_req.is_empty():
+		if not fetch.can_request():
 			break
 		var key: String = w[1]
-		if pending.has(key) or cache.has(key) or (failed.has(key) and now < int(failed[key])):
+		if fetch.is_busy(key) or cache.has(key) or (failed.has(key) and now < int(failed[key])):
 			continue
-		var r: HTTPRequest = free_req.pop_back()
-		pending[key] = r
-		r.set_meta("key", key)
-		if r.request(url % [int(w[2]), int(w[4]), int(w[3])]) != OK:
-			pending.erase(key)
-			free_req.append(r)
-			_fail(key)
+		fetch.request(key, url % [int(w[2]), int(w[4]), int(w[3])])
 	_want.clear()
 
 func _fail(key: String) -> void:
 	fail_count += 1
 	failed[key] = Time.get_ticks_msec() + 30000
 
-func _done(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray, r: HTTPRequest) -> void:
-	var key := str(r.get_meta("key", ""))
-	pending.erase(key)
-	free_req.append(r)
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.size() < 100:
-		_fail(key)
-		return
-	var img := Image.new()
-	var err := img.load_jpg_from_buffer(body) if body[0] == 0xFF else img.load_png_from_buffer(body)
-	if err != OK:
-		_fail(key)
-		return
+func _got(key: String, img: Image) -> void:
 	ok_count += 1
 	img.generate_mipmaps()
 	cache[key] = ImageTexture.create_from_image(img)

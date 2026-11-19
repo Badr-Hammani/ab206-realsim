@@ -100,11 +100,11 @@ func set_season(s: String) -> void:
 ## Draw distances (m) of the three terrain detail levels: 16 m grid near, 32 m, 64 m far.
 ## Ranges are measured to the 2 km tile centre, so the near level must reach past ~1.45 km.
 const LOD_RANGES := [2000.0, 5000.0]
-const LOD_RANGES_PRESET := [[1500.0, 4000.0], [2000.0, 5000.0], [2500.0, 6500.0]]
+const LOD_RANGES_PRESET := [[1500.0, 4000.0], [2000.0, 5000.0], [2500.0, 6500.0], [3500.0, 9000.0]]
 
-## Terrain detail levels per graphics preset (0 Low, 1 Medium, 2 High).
+## Terrain detail levels per graphics preset (0 Low, 1 Medium, 2 High, 3 Ultra).
 func set_lod_preset(p: int) -> void:
-	var r: Array = LOD_RANGES_PRESET[clampi(p, 0, 2)]
+	var r: Array = LOD_RANGES_PRESET[clampi(p, 0, LOD_RANGES_PRESET.size() - 1)]
 	for k in tiles.size():
 		var li := k % 3
 		var mi := tiles[k]

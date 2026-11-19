@@ -3,6 +3,7 @@ extends Node3D
 
 const Terrain = preload("res://scripts/world/terrain.gd")
 const Khouribga = preload("res://scripts/world/khouribga.gd")
+const HdGround = preload("res://scripts/world/hd_ground.gd")
 const MAPS := {"valle": "Training valley (fictional)", "khouribga": "Khouribga GMMK (real terrain)"}
 
 var terrain
@@ -15,6 +16,7 @@ var hover_spot := Vector3.ZERO       # lesson L3 hover-taxi target, 22 m north o
 var map_id := "valle"
 var season := "summer"
 var real_map                         # khouribga.gd when a real map is loaded
+var hd_ground                        # hd_ground.gd: live HD aerial photo on the 3D ground (real maps)
 var surface_lift := 0.0              # pad decks and painted marks raised above apron meshes on real maps
 
 func build(id := "valle") -> void:
@@ -47,6 +49,7 @@ func build(id := "valle") -> void:
 		psm.ground_horizon_color = Color(0.66, 0.60, 0.52)
 		real_map = Khouribga.new()
 		real_map.build(self)
+		_setup_hd_ground()
 	else:
 		_build_buildings()
 		_build_trees()
@@ -61,6 +64,28 @@ func set_draw_preset(p: int) -> void:
 		real_map.set_draw_distance(p)
 	if terrain and not terrain.tiles.is_empty():
 		terrain.set_lod_preset(p)
+	if hd_ground:
+		hd_ground.set_profile(p)
+
+## Live HD ground photo: needs the region projection (region.json) of the real map.
+func _setup_hd_ground() -> void:
+	var f: String = terrain.map_dir + "/region.json"
+	if not FileAccess.file_exists(f):
+		return
+	var r = JSON.parse_string(FileAccess.get_file_as_string(f))
+	if typeof(r) != TYPE_DICTIONARY:
+		return
+	hd_ground = HdGround.new()
+	hd_ground.name = "HdGround"
+	if not hd_ground.setup(r):
+		hd_ground = null
+		return
+	add_child(hd_ground)
+	hd_ground.add_material(terrain.photo_material)
+	if real_map.area_material:
+		hd_ground.add_material(real_map.area_material)
+	for m in real_map.road_materials:
+		hd_ground.add_material(m)
 
 ## Photo season of a real map ("spring" / "summer"); no reload needed.
 func set_season(s: String) -> void:

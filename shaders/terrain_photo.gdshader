@@ -8,6 +8,7 @@ render_mode diffuse_lambert, specular_disabled;
 uniform sampler2D photo : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float map_size = 16384.0;
 uniform int detail = 1;
+#include "res://shaders/hd_ground.gdshaderinc"
 
 varying vec3 wpos;
 
@@ -46,28 +47,32 @@ void fragment() {
 	vec2 uv = (wpos.xz + vec2(map_size * 0.5)) / map_size;
 	vec3 col = texture(photo, uv).rgb;
 	float dist = length(wpos - CAMERA_POSITION_WORLD);
+	// live HD aerial photo (when streaming works): real 1 m detail replaces the 10 m photo
+	vec4 hd = hd_sample(wpos, CAMERA_POSITION_WORLD);
+	col = mix(col, hd.rgb, hd.a);
+	float gen = 1.0 - 0.75 * hd.a;     // how much invented detail to add on top
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
 	float green = clamp((col.g - max(col.r, col.b)) * 6.0 + 0.3, 0.0, 1.0);
 	// medium-scale variation (5-40 m) breaks the 10 m pixel look from low altitude
 	float med = vnoise(wpos.xz / 23.0) * 0.6 + vnoise(wpos.xz / 6.5) * 0.4;
-	col *= mix(1.0, 0.9 + 0.2 * med, 1.0 - smoothstep(300.0, 1500.0, dist));
+	col *= mix(1.0, 0.9 + 0.2 * med, (1.0 - smoothstep(300.0, 1500.0, dist)) * gen);
 	if (detail > 0) {
-		float near = 1.0 - smoothstep(20.0, 160.0, dist);
+		float near = (1.0 - smoothstep(20.0, 160.0, dist)) * mix(1.0, 0.55, hd.a);
 		if (near > 0.0) {
 			float grain = vnoise(wpos.xz * 2.7) * 0.5 + vnoise(wpos.xz * 0.9) * 0.3 + vnoise(wpos.xz * 0.27) * 0.2;
 			vec3 d = col * (0.78 + 0.44 * grain);
 			// stones: lighter/darker speckles on bare ground
 			vec2 jit = wpos.xz * 1.6 + vec2(vnoise(wpos.xz * 0.5), vnoise(wpos.xz * 0.5 + 9.0)) * 1.7;
 			float st = blobs(jit, 0.05 * (1.0 - green), 0.22);
-			d = mix(d, col * (hash(floor(jit)) > 0.5 ? 1.25 : 0.75), st * 0.6);
+			d = mix(d, col * (hash(floor(jit)) > 0.5 ? 1.25 : 0.75), st * 0.6 * gen);
 			// tufts of grass/stubble where the photo is green or straw-coloured
 			vec2 jt = wpos.xz * 1.1 + vec2(vnoise(wpos.xz * 0.4 + 3.0), vnoise(wpos.xz * 0.4 + 5.0)) * 2.0;
 			float tuft = blobs(jt, 0.22 * green + 0.03, 0.40) * (0.5 + 0.5 * vnoise(wpos.xz * 3.0));
-			d = mix(d, col * vec3(0.78, 0.88, 0.62), tuft * 0.45);
+			d = mix(d, col * vec3(0.78, 0.88, 0.62), tuft * 0.45 * gen);
 			// faint plough lines on bare fields (orientation varies per 60 m patch)
 			float ang = hash(floor(wpos.xz / 60.0)) * 3.1416;
 			float fur = sin(dot(wpos.xz, vec2(cos(ang), sin(ang))) * 6.28 / 0.9);
-			d *= 1.0 - 0.07 * (1.0 - green) * smoothstep(0.2, 1.0, fur) * step(0.18, lum);
+			d *= 1.0 - 0.07 * gen * (1.0 - green) * smoothstep(0.2, 1.0, fur) * step(0.18, lum);
 			col = mix(col, d, near);
 		}
 	} else {

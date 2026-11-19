@@ -6,17 +6,18 @@ extends RefCounted
 var world            # world.gd
 var terrain          # terrain.gd (real map loaded)
 const TILE := 1024.0
-## Draw distances per graphics preset (Low, Medium, High), metres. 0 = no limit.
-const RANGE_HOUSES := [2000.0, 3500.0, 7000.0]
-const RANGE_TREES := [1500.0, 3000.0, 5000.0]
-const RANGE_STREETS := [2500.0, 4000.0, 7000.0]
-const RANGE_MAIN_ROADS := [5000.0, 9000.0, 0.0]
+## Draw distances per graphics preset (Low, Medium, High, Ultra), metres. 0 = no limit.
+const RANGE_HOUSES := [2000.0, 3500.0, 7000.0, 11000.0]
+const RANGE_TREES := [1500.0, 3000.0, 5000.0, 8000.0]
+const RANGE_STREETS := [2500.0, 4000.0, 7000.0, 10000.0]
+const RANGE_MAIN_ROADS := [5000.0, 9000.0, 0.0, 0.0]
 var house_tiles: Array[GeometryInstance3D] = []
 var tree_tiles: Array[GeometryInstance3D] = []
 var street_tiles: Array[GeometryInstance3D] = []
 var main_road_tiles: Array[GeometryInstance3D] = []
 var area_tiles: Array[GeometryInstance3D] = []
 var area_material: ShaderMaterial
+var road_materials: Array[ShaderMaterial] = []
 
 func build(w) -> void:
 	world = w
@@ -63,7 +64,7 @@ static func _tile_centre(k: Vector2i) -> Vector3:
 
 ## Distance culling per preset: far houses, trees and streets are skipped (the photo shows them).
 func set_draw_distance(preset: int) -> void:
-	var p := clampi(preset, 0, 2)
+	var p := clampi(preset, 0, RANGE_HOUSES.size() - 1)
 	for t in house_tiles:
 		t.visibility_range_end = RANGE_HOUSES[p]
 	for t in tree_tiles:
@@ -347,6 +348,7 @@ func _roads(list: Array) -> void:
 		var kind: int = key[1]
 		if not mats.has(kind):
 			mats[kind] = _paved_material(3 + kind, 1.0, 1.0)
+			road_materials.append(mats[kind])
 		var mi := MeshInstance3D.new()
 		mi.mesh = (groups[key] as SurfaceTool).commit()
 		mi.material_override = mats[kind]

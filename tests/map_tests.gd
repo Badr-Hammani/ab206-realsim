@@ -114,12 +114,31 @@ func _run() -> void:
 	var zz: int = hd.zoom_for(1.5)
 	for i in 200:
 		await process_frame
-		if hd.cache.size() >= 6 and hd.pending.is_empty():
+		if hd.cache.size() >= 6 and hd.fetch.busy() == 0:
 			break
 		await create_timer(0.03).timeout
 	nm.set_mode(nm.Mode.OFF)
 	main._set_paused(false)
 	check("[M11] HD photo tiles: placed to the cm, fetched live, cached", perr < 0.05 and berr < 0.5 and zz == 17 and hd.cache.size() >= 6 and hd.fail_count == 0, "projection error %.3f m / back %.3f m, zoom %d at 1.5 m/px, %d tiles loaded, %d failed" % [perr, berr, zz, hd.cache.size(), hd.fail_count])
+	# live HD ground photo on the 3D terrain (Ultra profile), tiles from the same local test server
+	var hg = w.hd_ground
+	hg.url = "http://127.0.0.1:8765/tile.jpg?%d/%d/%d"
+	hg.set_enabled(true)      # clears the failures from the blocked real server earlier in this run
+	main.apply_preset(3)
+	var cam_p: Vector3 = main.get_viewport().get_camera_3d().global_position
+	for i in 400:
+		await process_frame
+		if hg.levels.size() == 2 and hg.levels[0]["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20:
+			break
+		await create_timer(0.02).timeout
+	var Ln: Dictionary = hg.levels[0]
+	var q := Vector2(cam_p.x + 900.0, cam_p.z - 700.0)
+	var exact: Vector2 = hg._tile_at(17, q) - Vector2(Ln["base"])
+	var fitted := Vector2(Ln["ax"].dot(Vector3(q.x, q.y, 1.0)), Ln["ay"].dot(Vector3(q.x, q.y, 1.0)))
+	var fit_m: float = exact.distance_to(fitted) * float(Ln["tile_m"])
+	var on: float = t.photo_material.get_shader_parameter("hd_on")
+	check("[M12] HD ground photo streams onto the 3D terrain", hg.status == "live" and on > 0.5 and Ln["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and fit_m < 1.0 and Ln["w"] == 12, "%s; near %d / far %d tiles, tile %.0f m, affine fit error %.2f m at 1.1 km" % [hg.describe(), Ln["slots"].size(), hg.levels[1]["slots"].size(), Ln["tile_m"], fit_m])
+	main.apply_preset(1)
 	var s0: String = w.season
 	main.set_season("spring")
 	var tex_sp = t.ortho

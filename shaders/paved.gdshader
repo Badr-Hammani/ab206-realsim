@@ -9,6 +9,7 @@ uniform int kind = 0;
 uniform float length_m = 2400.0;
 uniform float width_m = 45.0;
 uniform vec3 asphalt = vec3(0.20, 0.20, 0.21);
+#include "res://shaders/hd_ground.gdshaderinc"
 
 float hash(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -31,6 +32,9 @@ void vertex() {
 }
 
 void fragment() {
+	// roads and railways (kind 3+): the live HD photo shows the real road, so the drawn strip steps aside
+	if (kind >= 3 && hd_sample(wpos, CAMERA_POSITION_WORLD).a > 0.5)
+		discard;
 	float n = vnoise(wpos.xz * 0.7) * 0.5 + vnoise(wpos.xz * 0.09) * 0.5;
 	vec3 col = asphalt * (0.85 + 0.3 * n);
 	float x = abs(UV.x);

@@ -7,6 +7,7 @@ render_mode diffuse_lambert, specular_disabled, cull_disabled;
 // Every kind starts from the satellite photo so the colours stay close to the real ground.
 uniform sampler2D photo : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float map_size = 16384.0;
+#include "res://shaders/hd_ground.gdshaderinc"
 
 varying vec3 wpos;
 varying vec2 local;
@@ -34,6 +35,9 @@ void vertex() {
 void fragment() {
 	vec2 uv = (wpos.xz + vec2(map_size * 0.5)) / map_size;
 	vec3 ph = texture(photo, uv).rgb;
+	// where the live HD photo is showing, the real park / pitch / cemetery is in the photo itself
+	if (hd_sample(wpos, CAMERA_POSITION_WORLD).a > 0.5)
+		discard;
 	float dist = length(wpos - CAMERA_POSITION_WORLD);
 	float n = hash(floor(wpos.xz * 0.7));
 	vec3 col = ph;

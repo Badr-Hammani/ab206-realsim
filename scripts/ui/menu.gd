@@ -518,10 +518,15 @@ func _build_settings() -> void:
 	pb.pressed.connect(func() -> void: action.emit("phone"))
 	_row(c, "Phone controller  (F10)", "Tilt a phone as the cyclic or collective", pb)
 	var g := _card("Graphics and sound")
-	_row(g, "Graphics quality  (F7)", "Low is best on integrated graphics", _segmented(["Low", "Medium", "High"], main.preset, func(i: int) -> void:
+	_row(g, "Graphics quality  (F7)", "Low for integrated graphics, Ultra for strong phones (iPhone 15/16) and gaming PCs", _segmented(["Low", "Medium", "High", "Ultra"], main.preset, func(i: int) -> void:
 		main._auto_q_off = true
 		main.apply_preset(i)
-		build(), 80))
+		build(), 70))
+	var hg = main.world.hd_ground
+	if hg != null:
+		_switch(g, "Live HD ground photo", "Real ~1 m aerial photo streamed around you (needs internet, Medium or higher). Now: " + hg.describe(), hg.enabled, func(b: bool) -> void:
+			hg.set_enabled(b)
+			main._save_settings())
 	_slider_row(g, "Sound volume", 0.0, 1.0, 0.05, main.audio.master_volume, "%.2f", func(v: float) -> void: main.audio.master_volume = v)
 	var q := _card("", "Educational simulation only. Not an approved training device. Always follow your instructor and the approved Rotorcraft Flight Manual.")
 	var qb := _pill("Quit", false, true)
