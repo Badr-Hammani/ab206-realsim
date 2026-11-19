@@ -174,6 +174,18 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--autoshot="):
 			_auto_dir = a.substr(11)
+		elif a.begins_with("--exposure="):
+			world.env.tonemap_exposure = float(a.substr(11))
+		elif a.begins_with("--white="):
+			world.env.tonemap_white = float(a.substr(8))
+		elif a.begins_with("--freecam="):
+			# test views: --freecam=x,y,z,yaw_deg,pitch_deg puts the free camera there (menu closed)
+			var v := a.substr(10).split_floats(",")
+			if v.size() >= 5:
+				cam_rig.mode = 2
+				cam_rig.free_pos = Vector3(v[0], v[1], v[2])
+				cam_rig.free_yaw = deg_to_rad(v[3])
+				cam_rig.free_pitch = deg_to_rad(v[4])
 	if not touch.active:
 		instructor.force("Welcome to the Bell 206B-3. Engine running, rotor at 100%, collective down on the main pad. Press F1 for controls. Raise the collective (W or mouse wheel) slowly and hold left pedal (A) as the torque builds.")
 
@@ -307,7 +319,6 @@ func apply_preset(i: int) -> void:
 	preset = clampi(i, 0, 3)
 	var vp := get_viewport()
 	var web := OS.has_feature("web")
-	world.env.glow_enabled = preset >= 2
 	match preset:
 		0:
 			vp.scaling_3d_scale = 0.5

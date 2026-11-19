@@ -281,6 +281,7 @@ func _areas(list: Array) -> void:
 	area_material.shader = load("res://shaders/area.gdshader")
 	area_material.set_shader_parameter("photo", terrain.ortho)
 	area_material.set_shader_parameter("map_size", terrain.SIZE)
+	area_material.set_shader_parameter("photo_gain", terrain.photo_gain())
 	var groups := {}
 	for a in list:
 		var kind := int(a[0])

@@ -8,6 +8,9 @@ render_mode diffuse_lambert, specular_disabled;
 uniform sampler2D photo : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float map_size = 16384.0;
 uniform int detail = 1;
+// The photos are display-stretched (bright); lit by sun + sky they would clip to white on the pale
+// plateau and hide the relief. This brings them back to ground-like reflectance.
+uniform float photo_gain = 0.58;
 #include "res://shaders/hd_ground.gdshaderinc"
 
 varying vec3 wpos;
@@ -79,6 +82,6 @@ void fragment() {
 		float fine = vnoise(wpos.xz * 0.33);
 		col *= mix(1.0, 0.86 + fine * 0.28, 1.0 - smoothstep(20.0, 120.0, dist));
 	}
-	ALBEDO = col;
+	ALBEDO = col * photo_gain;
 	ROUGHNESS = 0.95;
 }

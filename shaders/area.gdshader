@@ -7,6 +7,7 @@ render_mode diffuse_lambert, specular_disabled, cull_disabled;
 // Every kind starts from the satellite photo so the colours stay close to the real ground.
 uniform sampler2D photo : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float map_size = 16384.0;
+uniform float photo_gain = 0.58;   // same as terrain_photo.gdshader
 #include "res://shaders/hd_ground.gdshaderinc"
 
 varying vec3 wpos;
@@ -75,7 +76,7 @@ void fragment() {
 	} else {
 		col = mix(ph, vec3(0.74, 0.69, 0.60) * (0.9 + 0.15 * n), 0.4);
 	}
-	ALBEDO = col;
+	ALBEDO = col * photo_gain;
 	NORMAL = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);   // flat ground, either winding
 	ROUGHNESS = 0.95;
 }

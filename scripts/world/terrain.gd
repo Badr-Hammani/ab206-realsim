@@ -122,6 +122,10 @@ func region_photo(s: String) -> ImageTexture:
 	var img := Image.new()
 	if f == "" or img.load_jpg_from_buffer(FileAccess.get_file_as_bytes(map_dir + "/" + f)) != OK:
 		return null
+	# 3072 px = 32 m per pixel, the DEM's own spacing (the live HD photo covers the close range);
+	# the full 6144 px photo would need ~150 MB of video memory with mipmaps.
+	if img.get_width() > 3072:
+		img.resize(3072, 3072, Image.INTERPOLATE_BILINEAR)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
@@ -165,6 +169,11 @@ func set_season(s: String) -> void:
 	if outer_terrain:
 		outer_terrain.set_photo(region_photo(s))
 
+## Brightness of the draped satellite photos (they are display-stretched). The web / compatibility
+## renderer clips them to white on the pale plateau at 1.0; the PC renderer handles more.
+static func photo_gain() -> float:
+	return 0.58 if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 0.8
+
 ## Draw distances (m) of the three terrain detail levels: 16 m grid near, 32 m, 64 m far.
 ## Ranges are measured to the 2 km tile centre, so the near level must reach past ~1.45 km.
 const LOD_RANGES := [2000.0, 5000.0]
@@ -197,6 +206,7 @@ func _build_tiled_mesh() -> void:
 	photo_material.shader = load("res://shaders/terrain_photo.gdshader")
 	photo_material.set_shader_parameter("photo", ortho)
 	photo_material.set_shader_parameter("map_size", SIZE)
+	photo_material.set_shader_parameter("photo_gain", photo_gain())
 	var T := 128
 	var nt := (N - 1) / T
 	for ty in nt:

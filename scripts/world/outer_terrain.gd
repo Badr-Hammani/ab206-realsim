@@ -32,6 +32,7 @@ func build() -> void:
 	material.set_shader_parameter("map_size", terrain.OHALF * 2.0)
 	material.set_shader_parameter("photo", terrain.region_photo(terrain.season))
 	material.set_shader_parameter("detail", 1)
+	material.set_shader_parameter("photo_gain", terrain.photo_gain())
 	for cy in nc:
 		for cx in nc:
 			var mi := _mesh(cx * CH, cy * CH, CH, 8, 40.0)
