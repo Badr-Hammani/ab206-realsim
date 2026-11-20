@@ -18,6 +18,8 @@ from geo import Geo
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 pref, out_path = sys.argv[1], sys.argv[2]
+MIN_SHADOW_FRAC = float(os.environ.get("MIN_SHADOW_FRAC", "0.5"))   # share of west-edge rows with shadow
+MIN_WIDTH_M = 4.0
 im = cv2.imread(pref + ".jpg")
 meta = np.load(pref + ".npz")
 geo = Geo(int(meta["z"]), int(meta["x0"]), int(meta["y0"]))
@@ -55,6 +57,15 @@ for nm, pd in mm["pads"].items():
     c = geo.to_px([pd[0]], [pd[1]])[0] / S
     cv2.circle(road, (int(c[0]), int(c[1])), int(pd[2] + 15), 1, -1)
 road = road.astype(bool)
+# built-up land (ESA WorldCover "built-up" houses and OSM footprints of map.json): a roof without a
+# clear shadow is only accepted inside it, so bare soil and fields beside roads stay empty
+urban = np.zeros((H, W), np.uint8)
+for b in mm["buildings"]:
+    if len(b) > 6 and int(b[6]) <= 1:
+        u, v = geo.to_px(b[0], b[1]) / S
+        if 0 <= u < W and 0 <= v < H:
+            cv2.circle(urban, (int(u), int(v)), 18, 1, -1)
+urban = urban.astype(bool)
 near_road = cv2.dilate(road.astype(np.uint8), np.ones((61, 61), np.uint8)).astype(bool)   # 30 m
 
 veg = (A < -9) & (sd > 2.5) & (L < 140)
@@ -106,6 +117,27 @@ for i in range(1, n):
     rl = run_len[y:y + h, x:x + w][mask > 0]
     rl = rl[rl > 0]
     med = float(np.median(rl)) if rl.size >= 3 else 0.0
+    # a real building casts a shadow: most of its west edge must touch a shadow run (bare soil,
+    # road shoulders and fields beside roads have none). M2.25b: without this check thousands of
+    # false "buildings" lined every road and the airfield.
+    rows = np.where(mask.any(1))[0]
+    west = mask.argmax(1)
+    sh_rows = 0
+    for r in rows:
+        x_w = x + int(west[r])
+        sh_rows += 1 if shadow[y + r, max(x_w - 3, 0):x_w + 1].any() else 0
+    sh_frac = sh_rows / max(len(rows), 1)
+    in_urban = urban[y:y + h, x:x + w][mask > 0].mean() > 0.6
+    if not in_urban and (sh_frac < MIN_SHADOW_FRAC or med <= 0):
+        continue
+    # thin strips (road shoulders, kerbs, walls of plots) are not houses
+    (_, _), (rw, rh), _ = cv2.minAreaRect(c)
+    if min(rw, rh) < MIN_WIDTH_M:
+        continue
+    # bent strips: mean width (2 x area / perimeter) under 4.5 m, or very long and narrow
+    ar, pe = cv2.contourArea(c), cv2.arcLength(c, True)
+    if 2.0 * ar / max(pe, 1e-6) < 2.25 or max(rw, rh) > 8.0 * min(rw, rh):
+        continue
     if med > 0:
         shadow_meds.append(med)
     pts = (c.reshape(-1, 2).astype(np.float64) + [x, y]) * S
