@@ -106,10 +106,15 @@ func _ready() -> void:
 	heli.name = "Helicopter"
 	add_child(heli)
 	heli.build(fdm, panel_vp.get_texture())
-	rotor_wash = RotorWash.new()
-	rotor_wash.name = "RotorWash"
-	add_child(rotor_wash)
-	rotor_wash.setup(fdm, world.terrain, heli)
+	# rotor-wash dust: OFF unless switched on in settings.cfg ([graphics] rotor_wash=true); the pilot
+	# asked for it to be removed (M2.24b)
+	var scf := ConfigFile.new()
+	scf.load("user://settings.cfg")
+	if bool(scf.get_value("graphics", "rotor_wash", false)):
+		rotor_wash = RotorWash.new()
+		rotor_wash.name = "RotorWash"
+		add_child(rotor_wash)
+		rotor_wash.setup(fdm, world.terrain, heli)
 
 	controls = Controls.new()
 	controls.name = "Controls"
