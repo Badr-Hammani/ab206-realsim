@@ -49,6 +49,8 @@ const ROAD_STYLE := [[Color(1.0, 0.55, 0.25), 3.0], [Color(1.0, 0.85, 0.35), 2.4
 const HdTiles := preload("res://scripts/ui/hd_tiles.gd")
 var hd                        # hd_tiles.gd: live HD aerial photos when zoomed in (needs internet)
 var hd_button: Button
+var save_hd_button: Button
+var del_button: Button
 var markers: Node3D           # 3D beams at the pins, so they are visible while flying
 var _trail_t := 0.0
 var _drag_from := Vector2.ZERO
@@ -259,6 +261,10 @@ func _build_big() -> void:
 		_btn(bar, "Centre", func() -> void: follow = true)
 	tool_buttons["pin"] = _btn(bar, "Pin point", func() -> void: _set_tool("pin"))
 	tool_buttons["zone"] = _btn(bar, "Draw zone", func() -> void: _set_tool("zone"))
+	tool_buttons["erase"] = _btn(bar, "Delete tool", func() -> void: _set_tool("erase"))
+	tool_buttons["erase"].tooltip_text = "Then click (or tap) any pin or zone to delete it"
+	del_button = _btn(bar, "Delete pin", func() -> void: _delete_pin(target))
+	del_button.tooltip_text = "Deletes the selected pin (the yellow one). Keyboard: Delete"
 	for i in ZONE_COLORS.size():
 		var cb := _btn(bar, ZONE_NAMES[i], func() -> void: zone_color = i; _refresh_info())
 		cb.add_theme_color_override("font_color", ZONE_COLORS[i])
@@ -268,6 +274,9 @@ func _build_big() -> void:
 		if draft.size() > 0:
 			draft.remove_at(draft.size() - 1))
 	hd_button = _btn(bar, "HD photo: ON", _toggle_hd)
+	if main.world.get("hd_prefetch") != null:
+		save_hd_button = _btn(bar, "Save sharp HD", _save_hd)
+		save_hd_button.tooltip_text = "Downloads the sharp photo of the city, GMMK and the mines once and keeps it on this PC"
 	if not phone:
 		_btn(bar, "Zoom +", func() -> void: _zoom_at(big_view.size * 0.5, 0.67))
 		_btn(bar, "Zoom -", func() -> void: _zoom_at(big_view.size * 0.5, 1.5))
@@ -304,12 +313,29 @@ func _build_big() -> void:
 	name_edit.text_submitted.connect(_rename)
 	side.add_child(name_edit)
 	_btn(side, "Delete selected pin", func() -> void: _delete_pin(target))
+	_btn(side, "Delete ALL pins", func() -> void:
+		pins.clear()
+		target = -1
+		_save()
+		_refresh_info())
 	_btn(side, "Delete last zone", func() -> void:
 		if zones.size() > 0:
 			zones.remove_at(zones.size() - 1)
 			_save()
 			_refresh_info())
 	_set_tool("pin")
+
+func _save_hd() -> void:
+	var pf = main.world.get("hd_prefetch")
+	if pf == null:
+		return
+	if pf.running():
+		pf.stop()
+	else:
+		if hd:
+			hd.fail_count = 0
+			hd.failed.clear()
+		pf.start()
 
 func _toggle_hd() -> void:
 	if hd == null:
@@ -326,7 +352,7 @@ func _set_tool(t: String) -> void:
 	tool = t
 	draft.clear()
 	for k in tool_buttons:
-		(tool_buttons[k] as Button).modulate = Color(1, 1, 0.5) if k == t else Color(1, 1, 1)
+		(tool_buttons[k] as Button).modulate = (Color(1, 0.55, 0.5) if k == "erase" else Color(1, 1, 0.5)) if k == t else Color(1, 1, 1)
 	_refresh_info()
 
 func _refresh_info() -> void:
@@ -334,7 +360,10 @@ func _refresh_info() -> void:
 		return
 	var s := ""
 	if tool == "pin":
-		s += "PIN TOOL: click on the map to add a point. Click a point to fly to it. Right-click a point to delete it.\n"
+		s += "PIN TOOL: click on the map to add a point. Click a point to fly to it (it turns yellow).\n"
+		s += "TO DELETE: right-click a pin, or press Delete for the yellow one, or use Delete tool.\n"
+	elif tool == "erase":
+		s += "DELETE TOOL: click any pin or zone to delete it. Pick Pin point again to add pins.\n"
 	else:
 		s += "ZONE TOOL (%s): click the corners of the zone, then Finish zone. Right-click deletes a zone.\n" % ZONE_NAMES[zone_color]
 	s += "Wheel: zoom   Drag: move the map   Shift+K in flight: pin where you are\n\n"
@@ -342,7 +371,7 @@ func _refresh_info() -> void:
 	for i in pins.size():
 		var p: Dictionary = pins[i]
 		var ll := _latlon(Vector2(float(p["x"]), float(p["z"])))
-		s += "%s %s   %.5f, %.5f   %s\n" % [">" if i == target else " ", p["name"], ll.x, ll.y, _dist_text(Vector2(float(p["x"]), float(p["z"])).distance_to(heli_xz()))]
+		s += "%s %s   %.5f, %.5f   %s\n" % [">>" if i == target else "   ", p["name"], ll.x, ll.y, _dist_text(Vector2(float(p["x"]), float(p["z"])).distance_to(heli_xz()))]
 	s += "\nZones (%d):\n" % zones.size()
 	for z in zones:
 		s += "  %s  (%s, %d corners)\n" % [z["name"], ZONE_NAMES[int(z["color"])], (z["pts"] as Array).size()]
@@ -442,6 +471,16 @@ func _zoom_at(screen: Vector2, f: float) -> void:
 func _click(screen: Vector2) -> void:
 	var w := _to_world(big_view, big_centre, big_mpp, screen)
 	var hit := _pin_near(screen)
+	if tool == "erase":
+		if hit >= 0:
+			_delete_pin(hit)
+			return
+		var zi := zone_at(w)
+		if zi >= 0:
+			zones.remove_at(zi)
+			_save()
+			_refresh_info()
+		return
 	if tool == "pin":
 		if hit >= 0:
 			target = hit
@@ -491,6 +530,10 @@ func _rename(t: String) -> void:
 	_refresh_info()
 	name_edit.release_focus()
 
+## Delete key on the big map: removes the selected (yellow) pin.
+func delete_selected() -> void:
+	_delete_pin(target)
+
 func _delete_pin(i: int) -> void:
 	if i < 0 or i >= pins.size():
 		return
@@ -506,7 +549,7 @@ func _pin_near(screen: Vector2) -> int:
 	for i in pins.size():
 		var p: Dictionary = pins[i]
 		var s := _to_screen(big_view, big_centre, big_mpp, Vector2(float(p["x"]), float(p["z"])))
-		if s.distance_to(screen) < 12.0:
+		if s.distance_to(screen) < 12.0 * ui_k:
 			return i
 	return -1
 
@@ -722,6 +765,15 @@ func _draw_map(v: Control, c: Vector2, mpp: float, big: bool) -> void:
 		_label(v, Vector2(10, 52), hd.fetch.blocked_text() + " Tap HD photo to retry.", 13, Color(1, 0.8, 0.5), true)
 	elif big and hd != null and hd.active() and mpp < hd.START_MPP:
 		_label(v, Vector2(10, 52), "HD photo: loading... (%d loaded)" % hd.ok_count, 13, Color(1, 1, 1, 0.9), true)
+	if big and main.world.get("hd_prefetch") != null:
+		var pf = main.world.hd_prefetch
+		var pt: String = pf.describe()
+		if pt != "":
+			_label(v, Vector2(10, 74), pt, 12, Color(0.75, 1, 0.75) if pf.state == "finished" else Color(1, 1, 1, 0.85), true)
+		if save_hd_button:
+			save_hd_button.text = "Stop HD download" if pf.running() else ("HD saved: check again" if pf.state == "finished" else "Save sharp HD")
+	if del_button:
+		del_button.disabled = target < 0
 	# cursor readout (big map)
 	if big and Rect2(Vector2.ZERO, v.size).has_point(mouse_pos):
 		var w := _to_world(v, c, mpp, mouse_pos)

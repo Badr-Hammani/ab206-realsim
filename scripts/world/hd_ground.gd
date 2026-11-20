@@ -5,7 +5,7 @@ extends Node
 ##   near level  zoom 17, about 1.0 m per pixel at Khouribga (257 m per tile)
 ##   far level   zoom 15, about 4.0 m per pixel (1 km per tile)
 ## Window sizes (tiles per side) come from the graphics preset (set_profile). Everything stays in
-## memory (GPU texture arrays); nothing is written to disk. Needs internet; when tiles cannot be
+## memory (GPU texture arrays); on PC tile_fetch.gd also keeps them on disk. Needs internet (or the saved areas); when tiles cannot be
 ## loaded (offline, blocked by the browser or the page), the Sentinel-2 10 m photo stays.
 ## Imagery: Esri, Maxar, Earthstar Geographics (credit shown on screen while it is in use).
 

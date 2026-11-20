@@ -2,7 +2,8 @@ extends Node
 ## HD aerial photo layer for the moving map: web map tiles (Esri World Imagery, about 0.3 to 1 m per
 ## pixel over Morocco) fetched live from the internet while the big or small map is zoomed in.
 ## Only tiles on screen are requested, at most MAX_REQ at a time, nearest to the centre first.
-## Tiles are kept in memory only (LRU, MAX_CACHE), nothing is saved to disk.
+## Tiles are kept in memory (LRU, MAX_CACHE); on PC tile_fetch.gd also saves them to disk
+## (user://hd_cache), together with the areas hd_prefetch.gd downloads ahead.
 ## Tile corners are placed with the cubic lon/lat -> map-metre polynomials from region.json, so they
 ## line up with the map to well under a metre over the whole 98 km area.
 
@@ -134,6 +135,12 @@ func draw(v: Control, c: Vector2, mpp: float, view_world: Rect2, limit: float) -
 				drew = true
 				continue
 			_want.append([Vector2(tx + 0.5, ty + 0.5).distance_squared_to(centre), key, z, tx, ty])
+			if failed.has(key) and z > Z_MIN:
+				# not available at this zoom (offline, only the saved areas on disk): ask for the
+				# next coarser tile, which may be saved, so the map stays sharp as far as it can
+				var pk1 := "%d/%d/%d" % [z - 1, tx >> 1, ty >> 1]
+				if not cache.has(pk1):
+					_want.append([Vector2(tx + 0.5, ty + 0.5).distance_squared_to(centre) + 4.0, pk1, z - 1, tx >> 1, ty >> 1])
 			# coarser tile already in memory: draw its matching part until this one arrives
 			for up in range(1, 5):
 				var zz := z - up

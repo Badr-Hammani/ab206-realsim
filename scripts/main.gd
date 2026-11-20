@@ -420,6 +420,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				menu.open()
 				_set_paused(true)
+		KEY_DELETE:
+			if nav_map.is_big():
+				nav_map.delete_selected()
 		KEY_P:
 			if not menu.visible:
 				_set_paused(not paused)

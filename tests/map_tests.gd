@@ -139,6 +139,7 @@ func _run() -> void:
 	var on: float = t.photo_material.get_shader_parameter("hd_on")
 	check("[M12] HD ground photo streams onto the 3D terrain", hg.status == "live" and on > 0.5 and Ln["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and fit_m < 1.0 and Ln["w"] == 12, "%s; near %d / far %d tiles, tile %.0f m, affine fit error %.2f m at 1.1 km" % [hg.describe(), Ln["slots"].size(), hg.levels[1]["slots"].size(), Ln["tile_m"], fit_m])
 	main.apply_preset(1)
+	await _test_prefetch(nm)
 	# wide-area 3D terrain (98 km, Copernicus 32 m): mine pit 15.5 km E / 10.9 km S, seams at the core edge
 	var ot = t.outer_terrain
 	var pit: float = t.height_at(15520.0, 10880.0)
@@ -201,3 +202,68 @@ func _run() -> void:
 	else:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://settings.cfg"))
 	quit(0 if failed == 0 else 1)
+
+## [M14] sharp HD saved on the PC: prefetch of the key areas from the local test server into a test
+## cache folder, then the server stops (offline) and the map and 3D ground still load them from disk.
+func _test_prefetch(nm) -> void:
+	const TF := preload("res://scripts/world/tile_fetch.gd")
+	const PF := preload("res://scripts/world/hd_prefetch.gd")
+	var keep_dir: String = TF.cache_dir
+	TF.cache_dir = "user://hd_cache_test"
+	_rm_tree(TF.cache_dir)
+	var pf = PF.new()
+	pf.url = "http://127.0.0.1:8765/tile.jpg?%d/%d/%d"
+	root.add_child(pf)
+	pf.setup(main.world.terrain.region, false)
+	pf.url = "http://127.0.0.1:8765/tile.jpg?%d/%d/%d"
+	var t0 := Time.get_ticks_msec()
+	pf.start()
+	var total: int = pf.total
+	while pf.running() and Time.get_ticks_msec() - t0 < 240000:
+		await process_frame
+	var secs := float(Time.get_ticks_msec() - t0) / 1000.0
+	var on_disk := 0
+	var cd := DirAccess.open(TF.cache_dir)
+	for sub in cd.get_directories():      # one folder per zoom level ("x" for the test server's URL)
+		on_disk += DirAccess.open(TF.cache_dir + "/" + sub).get_files().size()
+	var marked := FileAccess.file_exists(TF.cache_dir + "/prefetch_v1.done")
+	# second run finds everything on disk and downloads nothing
+	pf.start()
+	var again: int = pf.queue.size()
+	# offline: stop the server, then the map at 1 m/px over the city loads only from disk
+	var hr := HTTPRequest.new()
+	root.add_child(hr)
+	hr.request("http://127.0.0.1:8765/quit")
+	await hr.request_completed
+	var hd = nm.hd
+	hd.cache.clear()
+	hd.order.clear()
+	hd.failed.clear()
+	hd.fail_count = 0
+	hd.ok_count = 0
+	hd.fetch.disk_hits = 0
+	nm.follow = false
+	nm.big_centre = Vector2(3900, -2900)     # Khouribga city centre
+	nm.big_mpp = 1.2
+	nm.set_mode(nm.Mode.BIG)
+	for i in 120:
+		await process_frame
+	var hits: int = hd.fetch.disk_hits
+	var cached: int = hd.cache.size()
+	nm.set_mode(nm.Mode.OFF)
+	main._set_paused(false)
+	pf.queue_free()
+	hr.queue_free()
+	_rm_tree(TF.cache_dir)
+	TF.cache_dir = keep_dir
+	check("[M14] sharp HD saved on the PC (city, GMMK, mines) and used offline", total > 1500 and on_disk == total and marked and again == 0 and hits >= 6 and cached >= 6, "%d tiles in %.0f s, %d files on disk, done mark %s, re-check downloads %d; offline map at 1.2 m/px: %d tiles from disk" % [total, secs, on_disk, marked, again, hits])
+
+func _rm_tree(path: String) -> void:
+	var d := DirAccess.open(path)
+	if d == null:
+		return
+	for sub in d.get_directories():
+		_rm_tree(path + "/" + sub)
+	for f in d.get_files():
+		d.remove(f)
+	DirAccess.remove_absolute(path)

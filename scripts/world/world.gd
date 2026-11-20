@@ -4,6 +4,7 @@ extends Node3D
 const Terrain = preload("res://scripts/world/terrain.gd")
 const Khouribga = preload("res://scripts/world/khouribga.gd")
 const HdGround = preload("res://scripts/world/hd_ground.gd")
+const HdPrefetch = preload("res://scripts/world/hd_prefetch.gd")
 const MAPS := {"valle": "Training valley (fictional)", "khouribga": "Khouribga GMMK (real terrain)"}
 
 var terrain
@@ -17,6 +18,7 @@ var map_id := "valle"
 var season := "summer"
 var real_map                         # khouribga.gd when a real map is loaded
 var hd_ground                        # hd_ground.gd: live HD aerial photo on the 3D ground (real maps)
+var hd_prefetch                      # hd_prefetch.gd: saves sharp HD photo of key areas on the PC
 var surface_lift := 0.0              # pad decks and painted marks raised above apron meshes on real maps
 
 func build(id := "valle") -> void:
@@ -87,6 +89,14 @@ func _setup_hd_ground() -> void:
 		hd_ground.add_material(real_map.area_material)
 	for m in real_map.road_materials:
 		hd_ground.add_material(m)
+	var pf = HdPrefetch.new()
+	pf.name = "HdPrefetch"
+	pf.process_mode = Node.PROCESS_MODE_ALWAYS     # keeps downloading while the big map pauses the game
+	if pf.setup(r):
+		add_child(pf)
+		hd_prefetch = pf
+	else:
+		pf.free()
 
 ## Photo season of a real map ("spring" / "summer"); no reload needed.
 func set_season(s: String) -> void:

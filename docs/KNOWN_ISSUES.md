@@ -1,4 +1,4 @@
-# Known issues and limitations (milestone 2.6)
+# Known issues and limitations (up to milestone 2.23)
 
 1. **Not measured on the target laptop yet.** Frame rate on the Ryzen 5 PRO 4650U is unknown until you run it. Use F6 (telemetry shows FPS, 1% low, frame time) and F7 to switch presets, and note the result in TEST_LOG.md.
 2. **Placeholder art.** Helicopter and cockpit are built from simple shapes. Instruments are a simplified 206B-3 layout, not a replica of your panel.
@@ -23,3 +23,5 @@
 21. **H0 instructor loop** (M2.9): the instructor's take-over limits (3 m, height 0.4-2.3 m, 30 deg, 15 deg attitude, 2.5 m/s) and the 30 s goal are simulator choices. With a joystick or phone, after "I have control" your stick stays where you left it: match the aircraft again before the next "you have control" (the keyboard/mouse controls follow the instructor automatically).
 22. **Khouribga map** (M2.14/M2.15): houses and trees are placed from land-cover data, not real buildings; most building heights are guesses; the runway length follows OpenStreetMap (2,402 m) while OpenAIP says 2,800 m. Building walls are not solid (only roofs), like the rest of the sim. The main training pad there is a sim placement, not a real pad. See docs/MAPS.md.
 23. **Khouribga map detail** (M2.15): 10 m satellite pixels are the limit of free imagery, so the ground from 100-500 m looks soft; frame rate over the city on the ThinkPad is not measured yet (use F7 Low if it drops).
+24. **Sharp HD photo saved on the PC** (M2.23): the first time the Khouribga map runs with internet, the sim downloads about 6,600 Esri World Imagery tiles (roughly 100-150 MB, a few minutes) for GMMK (to ~0.5 m/px), the city (~1 m, centre ~0.5 m) and the mines north-east/east (~2 m), into %APPDATA%\Godot\app_userdata\AB206 REALSIM\hd_cache. Every other tile you look at is also kept there. Offline, those places stay sharp; elsewhere the 10 m Sentinel-2 photo shows. Delete that folder to free the space. Tested with a local tile server, not yet against the real server from your PC.
+25. **Map stress test** (M2.23, tests/map_stress.gd): 12 rounds of open / zoom 80 m to 0.25 m per pixel / close on Ultra with real Vulkan rendering (software GPU) kept RAM flat (220 MB, +3 MB). The real ThinkPad GPU was not used for this test.
