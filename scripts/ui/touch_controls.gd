@@ -51,12 +51,15 @@ func _ready() -> void:
 	font = ThemeDB.fallback_font
 	visible = false
 
+var _pc_hint_at := -100000
+
 func enable() -> void:
 	if active:
 		return
 	active = true
 	visible = true
 	controls.mouse_cyclic = false
+	controls.touch_owns_mouse = true    # not saved: the PC keeps its own mouse cyclic setting
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	main.hud.show_telemetry = false
 	_thr_target = controls.throttle
@@ -112,7 +115,12 @@ func _layout_buttons() -> void:
 # ---------------------------------------------------------------- input
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and not active:
-		enable()
+		if OS.has_feature("web") or OS.has_feature("mobile"):
+			enable()
+		elif event.pressed and Time.get_ticks_msec() - _pc_hint_at > 20000:
+			# PC with a touch screen (e.g. ThinkPad): a touch must not switch off the mouse cyclic.
+			_pc_hint_at = Time.get_ticks_msec()
+			main.instructor.force("Touch screen detected. On the PC the mouse stays the cyclic; on-screen touch controls are only in the phone/web version.")
 	if not active or not visible:
 		return
 	if event is InputEventScreenTouch:

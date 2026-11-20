@@ -126,9 +126,9 @@ func _run() -> void:
 	hg.set_enabled(true)      # clears the failures from the blocked real server earlier in this run
 	main.apply_preset(3)
 	var cam_p: Vector3 = main.get_viewport().get_camera_3d().global_position
-	for i in 400:
+	for i in 1200:
 		await process_frame
-		if hg.levels.size() == 2 and hg.levels[0]["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20:
+		if hg.levels.size() == 3 and hg.levels[0]["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and hg.levels[2]["slots"].size() >= 40:
 			break
 		await create_timer(0.02).timeout
 	var Ln: Dictionary = hg.levels[0]
@@ -137,7 +137,7 @@ func _run() -> void:
 	var fitted := Vector2(Ln["ax"].dot(Vector3(q.x, q.y, 1.0)), Ln["ay"].dot(Vector3(q.x, q.y, 1.0)))
 	var fit_m: float = exact.distance_to(fitted) * float(Ln["tile_m"])
 	var on: float = t.photo_material.get_shader_parameter("hd_on")
-	check("[M12] HD ground photo streams onto the 3D terrain", hg.status == "live" and on > 0.5 and Ln["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and fit_m < 1.0 and Ln["w"] == 12, "%s; near %d / far %d tiles, tile %.0f m, affine fit error %.2f m at 1.1 km" % [hg.describe(), Ln["slots"].size(), hg.levels[1]["slots"].size(), Ln["tile_m"], fit_m])
+	check("[M12] HD ground photo streams onto the 3D terrain", hg.status == "live" and on > 0.5 and Ln["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and fit_m < 1.0 and Ln["w"] == 12 and hg.levels.size() == 3 and hg.levels[2]["z"] == 18 and hg.levels[2]["slots"].size() >= 40, "%s; 0.5 m level %d, near %d / far %d tiles, tile %.0f m, affine fit error %.2f m at 1.1 km" % [hg.describe(), hg.levels[2]["slots"].size() if hg.levels.size() > 2 else 0, Ln["slots"].size(), hg.levels[1]["slots"].size(), Ln["tile_m"], fit_m])
 	main.apply_preset(1)
 	await _test_prefetch(nm)
 	# wide-area 3D terrain (98 km, Copernicus 32 m): mine pit 15.5 km E / 10.9 km S, seams at the core edge

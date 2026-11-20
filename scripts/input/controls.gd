@@ -16,6 +16,9 @@ var pedal := 0.0
 var throttle := 1.0
 
 var mouse_cyclic := true
+signal mouse_cyclic_toggled(on: bool)
+var touch_owns_mouse := false       # touch controls switched the mouse cyclic off (not saved)
+const CFG_VERSION := 2              # 2 (M2.23): mouse cyclic switched back on once (a touch had saved it off)
 var mouse_sensitivity := 1.0
 var invert_mouse_y := false
 var mouse_look_held := false
@@ -187,6 +190,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			collective = clampf(collective - 0.015, 0.0, 1.0)
 	if event.is_action_pressed("toggle_mouse_cyclic"):
 		mouse_cyclic = not mouse_cyclic
+		touch_owns_mouse = false
+		mouse_cyclic_toggled.emit(mouse_cyclic)
 	if event.is_action_pressed("cyclic_center"):
 		stick_mouse = Vector2.ZERO
 
@@ -280,7 +285,8 @@ func save_config() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("mouse", "sensitivity", mouse_sensitivity)
 	cf.set_value("mouse", "invert_y", invert_mouse_y)
-	cf.set_value("mouse", "cyclic", mouse_cyclic)
+	cf.set_value("mouse", "cyclic", mouse_cyclic or touch_owns_mouse)
+	cf.set_value("mouse", "cfg_version", CFG_VERSION)
 	for fn in bindings:
 		cf.set_value("joy", fn, bindings[fn])
 	cf.save(CFG_PATH)
@@ -292,6 +298,8 @@ func load_config() -> void:
 	mouse_sensitivity = cf.get_value("mouse", "sensitivity", 1.0)
 	invert_mouse_y = cf.get_value("mouse", "invert_y", false)
 	mouse_cyclic = cf.get_value("mouse", "cyclic", true)
+	if int(cf.get_value("mouse", "cfg_version", 1)) < CFG_VERSION:
+		mouse_cyclic = true     # older builds saved it OFF after a touch on a touch-screen PC
 	if cf.has_section("joy"):
 		for fn in cf.get_section_keys("joy"):
 			bindings[fn] = cf.get_value("joy", fn)

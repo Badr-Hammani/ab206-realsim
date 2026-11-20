@@ -151,10 +151,12 @@ func _got(_key: String, _img: Image) -> void:
 	_ok_run += 1
 	_fail_streak = 0
 
-func _fail(_key: String) -> void:
+func _fail(key: String) -> void:
 	failed += 1
+	if failed <= 5:
+		print("HD prefetch: tile %s failed (%s)" % [key, fetch.last_error])
 	_fail_streak += 1
-	if _fail_streak >= 12 and state == "running":
+	if _fail_streak >= 12 and _ok_run == 0 and state == "running":
 		# no internet (or the imagery server refuses): stop now, try again next launch
 		queue.clear()
 		state = "offline"

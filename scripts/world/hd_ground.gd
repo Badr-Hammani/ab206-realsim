@@ -14,8 +14,10 @@ const TileFetch := preload("res://scripts/world/tile_fetch.gd")
 const CREDIT := "HD ground photo © Esri, Maxar, Earthstar Geographics"
 const Z_NEAR := 17
 const Z_FAR := 15
-## [near tiles per side, far tiles per side] per preset: Low, Medium, High, Ultra
-const PROFILE := [[0, 0], [6, 6], [8, 8], [12, 8]]
+const Z_CLOSE := 18                   # about 0.5 m per pixel right around the helicopter (High, Ultra)
+## [near tiles per side, far tiles per side, close tiles per side] per preset: Low, Medium, High, Ultra
+## (close tiles are 128 m: 8 tiles = 1 km square, 12 = 1.5 km)
+const PROFILE := [[0, 0, 0], [6, 6, 0], [8, 8, 8], [12, 8, 12]]
 const UPLOADS_PER_FRAME := 2
 const RETRY_MS := 30000
 
@@ -28,7 +30,8 @@ var levels: Array = []                # [near, far] dictionaries (see _make_leve
 var limit := 0.0                      # half size of the region the projection covers (m)
 var _ready_q: Array = []              # [key, Image] waiting for upload
 var _failed := {}                     # key -> retry time
-var _w := [0, 0]
+var _pending := {}                    # key -> true: loaded, waiting in _ready_q (do not ask again)
+var _w := [0, 0, 0]
 var credit: Label
 var status := "off"                   # off / loading / live / offline / outside
 var _last_report := 0
@@ -49,7 +52,9 @@ func setup(region: Dictionary) -> bool:
 	fetch.name = "TileFetch"
 	fetch.max_req = 8 if OS.has_feature("web") else 6
 	add_child(fetch)
-	fetch.tile_ready.connect(func(k: String, img: Image) -> void: _ready_q.append([k, img]))
+	fetch.tile_ready.connect(func(k: String, img: Image) -> void:
+		_pending[k] = true
+		_ready_q.append([k, img]))
 	fetch.tile_failed.connect(func(k: String) -> void: _failed[k] = Time.get_ticks_msec() + RETRY_MS)
 	var cl := CanvasLayer.new()
 	cl.layer = 5
@@ -77,15 +82,20 @@ func set_profile(preset: int) -> void:
 	var p: Array = PROFILE[clampi(preset, 0, PROFILE.size() - 1)]
 	if OS.has_feature("web") and preset >= 3:
 		p = PROFILE[2]        # phones: Ultra keeps High's tile window (video memory)
-	if p[0] == _w[0] and p[1] == _w[1]:
+	if OS.has_feature("web"):
+		p = [p[0], p[1], 0]   # phones: no 0.5 m level (memory, and texture slots on the web renderer)
+	if p[0] == _w[0] and p[1] == _w[1] and p[2] == _w[2]:
 		return
-	_w = [int(p[0]), int(p[1])]
+	_w = [int(p[0]), int(p[1]), int(p[2])]
 	levels.clear()
 	_ready_q.clear()
+	_pending.clear()
 	if _w[0] > 0:
 		levels.append(_make_level(Z_NEAR, _w[0], "n"))
 	if _w[1] > 0:
 		levels.append(_make_level(Z_FAR, _w[1], "f"))
+	if _w[2] > 0:
+		levels.append(_make_level(Z_CLOSE, _w[2], "u"))
 	for m in materials:
 		_push_all(m)
 
@@ -130,7 +140,7 @@ func _push_fit(m: ShaderMaterial, L: Dictionary) -> void:
 	m.set_shader_parameter("hd_ay_" + s, L["ay"])
 
 func _push_all(m: ShaderMaterial) -> void:
-	for s in ["n", "f"]:
+	for s in ["n", "f", "u"]:
 		m.set_shader_parameter("hd_r_" + s, 0.0)
 	for L in levels:
 		var s: String = L["sfx"]
@@ -195,11 +205,12 @@ func _process(_d: float) -> void:
 				if L["slots"].get(slot, Vector2i(-999999, -999999)) == Vector2i(tx, ty):
 					continue
 				var key := "%d/%d/%d" % [L["z"], tx, ty]
-				if fetch.is_busy(key) or (_failed.has(key) and now < int(_failed[key])):
+				if fetch.is_busy(key) or _pending.has(key) or (_failed.has(key) and now < int(_failed[key])):
 					continue
 				var dd := Vector2(tx + 0.5, ty + 0.5).distance_to(ct)
 				# near tiles first; the far level fills in between (its tiles cover 16 near tiles)
-				want.append([dd * (1.0 if li == 0 else 2.5), key, li, Vector2i(tx, ty)])
+				var zl: int = L["z"]
+				want.append([dd * (1.0 if zl == Z_NEAR else (0.6 if zl == Z_CLOSE else 2.5)), key, li, Vector2i(tx, ty)])
 	want.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	for wt in want:
 		if not fetch.can_request():
@@ -210,6 +221,7 @@ func _process(_d: float) -> void:
 	var n := 0
 	while not _ready_q.is_empty() and n < UPLOADS_PER_FRAME:
 		var item: Array = _ready_q.pop_front()
+		_pending.erase(item[0])
 		if _place(item[0], item[1]):
 			n += 1
 	var live := 0

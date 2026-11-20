@@ -41,6 +41,7 @@ var panel_vp: SubViewport
 var panel3d
 var menu
 var joy
+var _mouse_off_hint_at := -100000
 var nav_map                     # moving map with pins and zones (real maps only)
 var touch
 var phone
@@ -150,6 +151,8 @@ func _ready() -> void:
 	phone.role_lost.connect(func(r: String) -> void:
 		instructor.force("PHONE %s lost. The control stays where it was; keyboard/mouse have it again." % r.to_upper()))
 	phone.calibrated.connect(func(_r: String) -> void: controls.phone_release())
+	controls.mouse_cyclic_toggled.connect(func(on: bool) -> void:
+		instructor.force("Mouse cyclic ON: move the mouse to fly." if on else "Mouse cyclic OFF (M turns it back on). Use the arrow keys, a joystick or a phone for the cyclic."))
 	phone_panel = PhonePanel.new()
 	phone_panel.phone = phone
 	phone_panel.controls = controls
@@ -400,6 +403,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		controls.mouse_look_held = event.pressed
 	if event is InputEventMouseMotion and controls.mouse_look_held:
 		cam_rig.mouse_look(event.relative)
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not controls.mouse_cyclic and not controls.mouse_look_held and not controls._joy_bound("cyclic_lat") and (event as InputEventMouseMotion).relative.length() > 25.0 and Time.get_ticks_msec() - _mouse_off_hint_at > 15000:
+		_mouse_off_hint_at = Time.get_ticks_msec()
+		instructor.force("The mouse cyclic is OFF. Press M to fly the cyclic with the mouse.")
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active and not nav_map.is_big():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if not (event is InputEventKey) or not event.pressed or event.echo:

@@ -26,6 +26,7 @@ static var cache_dir := "user://hd_cache"   # tests use their own folder
 const DISK_LOADS_PER_FRAME := 3
 var use_disk := true       # PC only (set false in tests that need a real download)
 var disk_hits := 0
+var last_error := ""       # why the last download failed (shown in the log)
 var _disk_q: Array = []    # [key, path] waiting to be decoded from disk
 
 const JS := """
@@ -164,6 +165,7 @@ func _done(result: int, code: int, _h: PackedStringArray, body: PackedByteArray,
 	_busy.erase(key)
 	_free.append(r)
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.size() < 100:
+		last_error = "result %d, HTTP %d, %d bytes" % [result, code, body.size()]
 		_fail(key)
 		return
 	var img := _decode(body)
