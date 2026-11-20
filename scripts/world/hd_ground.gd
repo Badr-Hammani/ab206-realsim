@@ -19,6 +19,10 @@ const Z_CLOSE := 18                   # about 0.5 m per pixel right around the h
 ## (close tiles are 128 m: 8 tiles = 1 km square, 12 = 1.5 km)
 const PROFILE := [[0, 0, 0], [6, 6, 0], [8, 8, 8], [12, 8, 12]]
 const UPLOADS_PER_FRAME := 2
+## AI-sharpened 0.5 m photo (tools/ai/upscale.py): 512 px files <cache>/sr18/<x>_<y>.webp, 0.25 m look.
+## Where they exist the close level uses them instead of the 256 px download (PC only).
+const SR_DIR := "sr18"
+const SR_LOADS_PER_FRAME := 2
 const RETRY_MS := 30000
 
 var url := HdTiles.URL               # tests point this at a local server
@@ -36,6 +40,8 @@ var credit: Label
 var status := "off"                   # off / loading / live / offline / outside
 var _last_report := 0
 var _offline_at := -1                 # when it gave up; tries again a minute later (signal may return)
+var sr_used := 0                      # AI-sharpened tiles placed so far
+var _sr_have := {}                    # "x_y" -> true: files present in the sr18 folder
 
 func setup(region: Dictionary) -> bool:
 	if not region.has("proj"):
@@ -48,6 +54,7 @@ func setup(region: Dictionary) -> bool:
 	proj.lat0 = float(region["proj"].get("lat0", 0.0))
 	proj.lon0 = float(region["proj"].get("lon0", 0.0))
 	limit = float(region.get("size_m", 98304.0)) * 0.5 - 500.0
+	_scan_sr()
 	fetch = TileFetch.new()
 	fetch.name = "TileFetch"
 	fetch.max_req = 8 if OS.has_feature("web") else 6
@@ -72,6 +79,20 @@ func setup(region: Dictionary) -> bool:
 	cl.add_child(credit)
 	return true
 
+## Lists the AI-sharpened tiles once (a few thousand names; cheap).
+func _scan_sr() -> void:
+	_sr_have.clear()
+	if OS.has_feature("web"):
+		return
+	var d := DirAccess.open(TileFetch.cache_dir + "/" + SR_DIR)
+	if d == null:
+		return
+	for f in d.get_files():
+		if f.ends_with(".webp"):
+			_sr_have[f.get_basename()] = true
+	if not _sr_have.is_empty():
+		print("HD ground: %d AI-sharpened 0.25 m tiles available" % _sr_have.size())
+
 func add_material(m: ShaderMaterial) -> void:
 	if m and not materials.has(m):
 		materials.append(m)
@@ -95,12 +116,12 @@ func set_profile(preset: int) -> void:
 	if _w[1] > 0:
 		levels.append(_make_level(Z_FAR, _w[1], "f"))
 	if _w[2] > 0:
-		levels.append(_make_level(Z_CLOSE, _w[2], "u"))
+		levels.append(_make_level(Z_CLOSE, _w[2], "u", 512 if not _sr_have.is_empty() else 256))
 	for m in materials:
 		_push_all(m)
 
-func _make_level(z: int, w: int, sfx: String) -> Dictionary:
-	var blank := Image.create(256, 256, true, Image.FORMAT_RGBA8)
+func _make_level(z: int, w: int, sfx: String, px := 256) -> Dictionary:
+	var blank := Image.create(px, px, true, Image.FORMAT_RGBA8)
 	blank.fill(Color(0.5, 0.5, 0.5))
 	blank.generate_mipmaps()
 	var imgs: Array[Image] = []
@@ -112,7 +133,7 @@ func _make_level(z: int, w: int, sfx: String) -> Dictionary:
 	idx.fill(Color(-1e5, -1e5, 0))
 	var ll: Vector2 = proj.to_latlon(Vector2.ZERO)
 	var base: Vector2 = proj.tile_xy(ll.y, ll.x, z).floor()
-	return {"z": z, "w": w, "sfx": sfx, "tex": tex, "idx": idx, "idx_tex": ImageTexture.create_from_image(idx),
+	return {"z": z, "w": w, "sfx": sfx, "px": px, "tex": tex, "idx": idx, "idx_tex": ImageTexture.create_from_image(idx),
 		"base": Vector2i(base), "slots": {}, "fit_at": Vector2(1e9, 1e9), "ax": Vector3.ZERO, "ay": Vector3.ZERO,
 		"tile_m": 40075016.7 * cos(deg_to_rad(ll.x)) / float(1 << z), "dirty": false}
 
@@ -212,11 +233,25 @@ func _process(_d: float) -> void:
 				var zl: int = L["z"]
 				want.append([dd * (1.0 if zl == Z_NEAR else (0.6 if zl == Z_CLOSE else 2.5)), key, li, Vector2i(tx, ty)])
 	want.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var sr_loads := 0
 	for wt in want:
-		if not fetch.can_request():
-			break
 		var t: Vector2i = wt[3]
-		fetch.request(wt[1], url % [int(levels[wt[2]]["z"]), t.y, t.x])
+		var zl: int = levels[wt[2]]["z"]
+		var sk := "%d_%d" % [t.x, t.y]
+		if zl == Z_CLOSE and _sr_have.has(sk):
+			if sr_loads >= SR_LOADS_PER_FRAME:
+				continue
+			sr_loads += 1
+			var img := Image.load_from_file(TileFetch.cache_dir + "/" + SR_DIR + "/" + sk + ".webp")
+			if img and not img.is_empty():
+				_pending[wt[1]] = true
+				_ready_q.append([wt[1], img])
+				sr_used += 1
+				continue
+			_sr_have.erase(sk)
+		if not fetch.can_request():
+			continue
+		fetch.request(wt[1], url % [zl, t.y, t.x])
 	# upload a few finished tiles per frame (mipmaps + GPU upload cost a few ms on a phone)
 	var n := 0
 	while not _ready_q.is_empty() and n < UPLOADS_PER_FRAME:
@@ -252,8 +287,9 @@ func _place(key: String, img: Image) -> bool:
 		var w: int = L["w"]
 		if t.x < o.x or t.y < o.y or t.x >= o.x + w or t.y >= o.y + w:
 			return false     # flew away from it meanwhile
-		if img.get_width() != 256 or img.get_height() != 256:
-			img.resize(256, 256)
+		var px: int = L.get("px", 256)
+		if img.get_width() != px or img.get_height() != px:
+			img.resize(px, px, Image.INTERPOLATE_BILINEAR if px > img.get_width() else Image.INTERPOLATE_LANCZOS)
 		if img.get_format() != Image.FORMAT_RGBA8:
 			img.convert(Image.FORMAT_RGBA8)
 		img.generate_mipmaps()
@@ -273,7 +309,7 @@ func describe() -> String:
 		live += (L["slots"] as Dictionary).size()
 	match status:
 		"live":
-			return "live (%d tiles)" % live
+			return "live (%d tiles)" % live + (", %d AI-sharpened" % sr_used if sr_used > 0 else "")
 		"loading":
 			return "loading..."
 		"offline":

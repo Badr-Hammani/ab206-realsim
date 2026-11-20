@@ -138,6 +138,7 @@ func _run() -> void:
 	var fit_m: float = exact.distance_to(fitted) * float(Ln["tile_m"])
 	var on: float = t.photo_material.get_shader_parameter("hd_on")
 	check("[M12] HD ground photo streams onto the 3D terrain", hg.status == "live" and on > 0.5 and Ln["slots"].size() >= 40 and hg.levels[1]["slots"].size() >= 20 and fit_m < 1.0 and Ln["w"] == 12 and hg.levels.size() == 3 and hg.levels[2]["z"] == 18 and hg.levels[2]["slots"].size() >= 40, "%s; 0.5 m level %d, near %d / far %d tiles, tile %.0f m, affine fit error %.2f m at 1.1 km" % [hg.describe(), hg.levels[2]["slots"].size() if hg.levels.size() > 2 else 0, Ln["slots"].size(), hg.levels[1]["slots"].size(), Ln["tile_m"], fit_m])
+	await _test_sr(hg, cam_p)
 	main.apply_preset(1)
 	await _test_prefetch(nm)
 	# wide-area 3D terrain (98 km, Copernicus 32 m): mine pit 15.5 km E / 10.9 km S, seams at the core edge
@@ -257,6 +258,43 @@ func _test_prefetch(nm) -> void:
 	_rm_tree(TF.cache_dir)
 	TF.cache_dir = keep_dir
 	check("[M14] sharp HD saved on the PC (city, GMMK, mines) and used offline", total > 1500 and on_disk == total and marked and again == 0 and hits >= 6 and cached >= 6, "%d tiles in %.0f s, %d files on disk, done mark %s, re-check downloads %d; offline map at 1.2 m/px: %d tiles from disk" % [total, secs, on_disk, marked, again, hits])
+
+## [M15] AI-sharpened 0.25 m tiles (tools/ai/upscale.py, <cache>/sr18/<x>_<y>.webp) replace the
+## 256 px zoom-18 tiles of the close level: 512 px layers, loaded from disk, no download for them.
+func _test_sr(hg, cam_p: Vector3) -> void:
+	const TF := preload("res://scripts/world/tile_fetch.gd")
+	var keep_dir: String = TF.cache_dir
+	TF.cache_dir = "user://hd_cache_sr_test"
+	_rm_tree(TF.cache_dir)
+	DirAccess.make_dir_recursive_absolute(TF.cache_dir + "/sr18")
+	var ct: Vector2 = hg._tile_at(18, Vector2(cam_p.x, cam_p.z))
+	var img := Image.create(512, 512, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.9, 0.1, 0.1))
+	var made := 0
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			img.save_webp(TF.cache_dir + "/sr18/%d_%d.webp" % [int(ct.x) + dx, int(ct.y) + dy])
+			made += 1
+	hg._scan_sr()
+	hg._w = [0, 0, 0]
+	hg.set_profile(3)
+	for i in 600:
+		await process_frame
+		if hg.sr_used >= made and hg.levels[2]["slots"].size() >= 40:
+			break
+		await create_timer(0.02).timeout
+	var L: Dictionary = hg.levels[2]
+	var lay: Image = (L["tex"] as Texture2DArray).get_layer_data(posmod(int(ct.y), L["w"]) * L["w"] + posmod(int(ct.x), L["w"]))
+	# headless has no GPU copy of the layer; then check that the slot holds that tile
+	var red := lay.get_pixel(256, 256) if lay else Color(1, 0, 0)
+	var placed: bool = L["slots"].get(Vector2i(posmod(int(ct.x), L["w"]), posmod(int(ct.y), L["w"]))) == Vector2i(int(ct.x), int(ct.y))
+	var ok: bool = L["px"] == 512 and hg.sr_used >= made and placed and red.r > 0.8 and red.g < 0.25 and L["slots"].size() >= 40
+	check("[M15] AI-sharpened 0.25 m photo used near the helicopter", ok, "%s; layer %d px, centre pixel %s" % [hg.describe(), L["px"], red])
+	_rm_tree(TF.cache_dir)
+	TF.cache_dir = keep_dir
+	hg._scan_sr()
+	hg._w = [0, 0, 0]
+	hg.set_profile(3)
 
 func _rm_tree(path: String) -> void:
 	var d := DirAccess.open(path)
