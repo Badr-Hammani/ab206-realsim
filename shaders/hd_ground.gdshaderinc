@@ -35,7 +35,8 @@ vec4 hd_level(sampler2DArray tex, sampler2D idx, vec2 t, vec2 gx, vec2 gy, float
 	if (abs(have.x - tf.x) > 0.25 || abs(have.y - tf.y) > 0.25)
 		return vec4(0.0);
 	vec2 uv = clamp(t - tf, vec2(0.5 / 256.0), vec2(255.5 / 256.0));
-	vec3 c = textureGrad(tex, vec3(uv, slot.y * w + slot.x), gx, gy).rgb;
+	// gradients x0.6: about 0.7 mip level sharper than default (anisotropic filtering keeps it clean)
+	vec3 c = textureGrad(tex, vec3(uv, slot.y * w + slot.x), gx * 0.6, gy * 0.6).rgb;
 	return vec4(c, 1.0);
 }
 

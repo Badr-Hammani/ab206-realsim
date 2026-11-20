@@ -9,6 +9,7 @@ const Trim = preload("res://scripts/fdm/trim.gd")
 const World = preload("res://scripts/world/world.gd")
 const HoverRefs = preload("res://scripts/world/hover_refs.gd")
 const HeliModel = preload("res://scripts/aircraft/heli_model.gd")
+const RotorWash = preload("res://scripts/world/rotor_wash.gd")
 const Controls = preload("res://scripts/input/controls.gd")
 const CameraRig = preload("res://scripts/core/camera_rig.gd")
 const Hud = preload("res://scripts/ui/hud.gd")
@@ -42,6 +43,7 @@ var panel3d
 var menu
 var joy
 var _mouse_off_hint_at := -100000
+var rotor_wash                  # rotor_wash.gd: downwash dust near the ground
 var nav_map                     # moving map with pins and zones (real maps only)
 var touch
 var phone
@@ -104,6 +106,10 @@ func _ready() -> void:
 	heli.name = "Helicopter"
 	add_child(heli)
 	heli.build(fdm, panel_vp.get_texture())
+	rotor_wash = RotorWash.new()
+	rotor_wash.name = "RotorWash"
+	add_child(rotor_wash)
+	rotor_wash.setup(fdm, world.terrain, heli)
 
 	controls = Controls.new()
 	controls.name = "Controls"
@@ -363,6 +369,8 @@ func apply_preset(i: int) -> void:
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 16000.0
 	world.set_draw_preset(preset)
+	if rotor_wash:
+		rotor_wash.set_profile(preset)
 	_save_settings()
 
 ## Lowers the preset (then the render scale on Low) when the average FPS stays under
