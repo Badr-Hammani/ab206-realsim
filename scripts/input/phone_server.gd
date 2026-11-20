@@ -31,6 +31,12 @@ extends Node
 
 const HTTPS_PORT := 8206
 const HTTP_PORT := 8207
+## If 8206/8207 are taken (most often a second AB206 window that is still open, or one that did not
+## close properly), the server moves to the next free pair and says so; the QR code and address
+## follow the ports really in use.
+const PORT_PAIRS := [[8206, 8207], [8216, 8217], [8226, 8227], [8236, 8237]]
+var https_port := HTTPS_PORT
+var http_port := HTTP_PORT
 const CERT_PATH := "user://phone_tls.crt"
 const KEY_PATH := "user://phone_tls.key"
 const PAGE_PATH := "res://phone/phone.html"
@@ -104,17 +110,34 @@ func start() -> bool:
 	else:
 		_page = "<html><body>phone.html missing</body></html>".to_utf8_buffer()
 	_tls_opts = _make_tls()
-	_srv_tls = TCPServer.new()
 	var e1 := ERR_UNAVAILABLE
-	if _tls_opts != null:
-		e1 = _srv_tls.listen(HTTPS_PORT, "*")
-	_srv_plain = TCPServer.new()
-	var e2 := _srv_plain.listen(HTTP_PORT, "*")
+	var e2 := ERR_UNAVAILABLE
+	var moved := false
+	for pair in PORT_PAIRS:
+		_srv_tls = TCPServer.new()
+		_srv_plain = TCPServer.new()
+		e1 = _srv_tls.listen(pair[0], "*") if _tls_opts != null else ERR_UNAVAILABLE
+		e2 = _srv_plain.listen(pair[1], "*")
+		if e2 == OK and (e1 == OK or _tls_opts == null):
+			https_port = pair[0]
+			http_port = pair[1]
+			break
+		# this pair is (partly) taken: free what we got and try the next pair
+		_srv_tls.stop()
+		_srv_plain.stop()
+		e1 = ERR_UNAVAILABLE
+		e2 = ERR_UNAVAILABLE
+		moved = true
 	if e1 != OK and e2 != OK:
-		error_text = "Could not open ports %d/%d (another program uses them?)" % [HTTPS_PORT, HTTP_PORT]
+		error_text = "Could not open the phone ports (8206-8237). Another AB206 window is probably still open: close it (taskbar, or Task Manager > Godot), then press Start phone server."
 		return false
 	if e1 != OK:
-		error_text = "HTTPS port %d unavailable; only plain HTTP %d is running." % [HTTPS_PORT, HTTP_PORT]
+		error_text = "HTTPS port unavailable; only plain HTTP %d is running." % http_port
+	elif moved:
+		error_text = "Ports 8206/8207 are busy (another AB206 window still open?), so the phone server uses %d/%d. Use the new address / QR code below." % [https_port, http_port]
+	var html := _page.get_string_from_utf8()
+	if html.find("__HTTPS_PORT__") >= 0:
+		_page = html.replace("__HTTPS_PORT__", str(https_port)).to_utf8_buffer()
 	running = true
 	addresses = local_addresses()
 	return true
@@ -179,7 +202,7 @@ static func _is_172_private(a: String) -> bool:
 
 func url(secure := true) -> String:
 	var ip := addresses[0] if addresses.size() > 0 else "<this-pc-ip>"
-	return ("https://%s:%d" % [ip, HTTPS_PORT]) if secure else ("http://%s:%d" % [ip, HTTP_PORT])
+	return ("https://%s:%d" % [ip, https_port]) if secure else ("http://%s:%d" % [ip, http_port])
 
 # ------------------------------------------------------------------- polling
 func _process(dt: float) -> void:

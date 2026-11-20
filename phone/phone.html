@@ -99,7 +99,7 @@ if (role === "cyclic" || role === "collective" || role === "pedals") pickRole(ro
 if (!window.isSecureContext) {
   var w = document.getElementById("secwarn");
   w.classList.remove("hidden");
-  var hs = "https://" + location.hostname + ":8206";
+  var hs = "https://" + location.hostname + ":__HTTPS_PORT__";
   w.innerHTML = "This page is not on a secure (https) address, so most phone browsers will NOT give it the motion sensors. " +
     "If nothing moves after Start, open <b>" + hs + "</b> instead and accept the certificate warning (it is this simulator's own certificate).";
 }
