@@ -18,6 +18,8 @@ var main_road_tiles: Array[GeometryInstance3D] = []
 var area_tiles: Array[GeometryInstance3D] = []
 var area_material: ShaderMaterial
 var road_materials: Array[ShaderMaterial] = []
+const AiFeatures := preload("res://scripts/world/ai_features.gd")
+var ai                # ai_features.gd: buildings and trees found in the 0.5 m photo (or null)
 
 func build(w) -> void:
 	world = w
@@ -51,10 +53,31 @@ func build(w) -> void:
 	_roads(terrain.map_meta.get("roads", []))
 	_areas(terrain.map_meta.get("areas", []))
 	var t1 := Time.get_ticks_msec()
-	_buildings(terrain.map_meta["buildings"])
+	# buildings and trees found in the 0.5 m photo replace the estimated ones where it was analysed
+	var blist: Array = terrain.map_meta["buildings"]
+	var tlist: Array = terrain.map_meta["trees"]
+	ai = AiFeatures.new()
+	if ai.load_data():
+		var kb: Array = []
+		for b in blist:
+			# keep real OSM landmarks (mosques, minarets, fuel stations...: src >= 2) everywhere
+			if (b.size() > 6 and int(b[6]) >= 2) or not ai.covered(float(b[0]), float(b[1])):
+				kb.append(b)
+		var kt: Array = []
+		for t in tlist:
+			if not ai.covered(float(t[0]), float(t[1])):
+				kt.append(t)
+		blist = kb
+		tlist = kt + ai.trees()
+		ai.build_buildings(world, terrain)
+		house_tiles.append_array(ai.tiles)
+		road_materials.append(ai.material)      # so the HD photo is drawn on the real roofs too
+	else:
+		ai = null
+	_buildings(blist)
 	var t2 := Time.get_ticks_msec()
-	_trees(terrain.map_meta["trees"])
-	print("Khouribga map: roads %d ms, houses %d ms, trees %d ms" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2])
+	_trees(tlist)
+	print("Khouribga map: roads %d ms, houses %d ms, trees %d ms%s" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2, (", photo-detected: %d buildings, %d trees" % [ai.building_count, ai.data.get("trees", []).size()]) if ai else ""])
 
 static func _tile_key(x: float, z: float) -> Vector2i:
 	return Vector2i(floori(x / TILE), floori(z / TILE))

@@ -357,6 +357,8 @@ func height_at(x: float, z: float) -> float:
 		var mn: Vector3 = b["min"]
 		var mx: Vector3 = b["max"]
 		if x >= mn.x and x <= mx.x and z >= mn.z and z <= mx.z:
+			if b.has("poly") and not Geometry2D.is_point_in_polygon(Vector2(x, z), b["poly"]):
+				continue      # real footprint (AI buildings): inside the box but outside the walls
 			h = maxf(h, mx.y)
 	return h
 
@@ -366,8 +368,10 @@ func normal_at(x: float, z: float) -> Vector3:
 	var hz := _grid_height(x, z + e) - _grid_height(x, z - e)
 	return Vector3(-hx, 2.0 * e, -hz).normalized()
 
-func add_building(center: Vector3, size: Vector3) -> void:
+func add_building(center: Vector3, size: Vector3, poly := PackedVector2Array()) -> void:
 	var b := {"min": center - Vector3(size.x, 0.0, size.z) * 0.5, "max": center + Vector3(size.x * 0.5, size.y, size.z * 0.5)}
+	if poly.size() >= 3:
+		b["poly"] = poly
 	buildings.append(b)
 	var k := buildings.size() - 1
 	var mn: Vector3 = b["min"]
