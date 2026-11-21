@@ -19,6 +19,13 @@ road=cv2.morphologyEx(road,cv2.MORPH_OPEN,np.ones((7,7),np.uint8))
 n,lb,st,_=cv2.connectedComponentsWithStats(road,8)
 road=np.isin(lb,[i for i in range(1,n) if st[i,4]>3000])
 road=cv2.dilate(road.astype(np.uint8),np.ones((3,3),np.uint8)).astype(bool)
+# the district's asphalt looks teal-grey in this photo (A about -12, B about 6): mask it as road too
+road2=((A<-8.5)&(B<9.5)&(L>95)&(L<175)).astype(np.uint8)
+road2=cv2.morphologyEx(road2,cv2.MORPH_OPEN,np.ones((5,5),np.uint8))
+n2,lb2,st2,_=cv2.connectedComponentsWithStats(road2,8)
+road2=np.isin(lb2,[i for i in range(1,n2) if st2[i,4]>1500])
+road2=cv2.morphologyEx(road2.astype(np.uint8),cv2.MORPH_CLOSE,np.ones((9,9),np.uint8)).astype(bool)
+road=road|road2
 loc=cv2.blur(L,(41,41))
 red=(A>9)&(L>85)&(L<200)
 sdm=cv2.blur(L,(7,7)); sd=np.sqrt(np.maximum(cv2.blur(L*L,(7,7))-sdm*sdm,0))
@@ -64,6 +71,8 @@ for i in range(1,ws.max()+1):
     rect_area=(u1-u0+1)*(v1-v0+1); rfill=ar/max(rect_area,1)
     P2=np.stack([cx+box[:,0]*u[0]+box[:,1]*v[0], cy+box[:,0]*u[1]+box[:,1]*v[1]],1)
     rm=np.zeros_like(m); cv2.fillPoly(rm,[P2.astype(np.int32)],1); sfr=(sand&(rm>0)).sum()/max(rm.sum(),1)
+    rfr=(road&(rm>0)).sum()/max(rm.sum(),1)
+    if rfr>0.25: continue
     if rfill>0.62 and sfr<0.15:
         poly=np.stack([cx+box[:,0]*u[0]+box[:,1]*v[0], cy+box[:,0]*u[1]+box[:,1]*v[1]],1)
     else:
@@ -84,5 +93,6 @@ for p in pieces:
 out=cv2.addWeighted(a,0.55,ov,0.45,0)
 for p in pieces: cv2.polylines(out,[np.array(p['poly'],np.int32)],True,(255,255,0),1)
 cv2.imwrite('b_full.png',out)
+cv2.imwrite('road.png',(road*255).astype(np.uint8))
 cv2.imwrite('sand.png',(sand*255).astype(np.uint8))
 print(len(pieces), np.median([p['shadow_px'] for p in pieces if p['shadow_px']>0]))
