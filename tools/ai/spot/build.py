@@ -26,6 +26,8 @@ n2,lb2,st2,_=cv2.connectedComponentsWithStats(road2,8)
 road2=np.isin(lb2,[i for i in range(1,n2) if st2[i,4]>1500])
 road2=cv2.morphologyEx(road2.astype(np.uint8),cv2.MORPH_CLOSE,np.ones((9,9),np.uint8)).astype(bool)
 road=road|road2
+near_road=cv2.dilate(road.astype(np.uint8),np.ones((21,21),np.uint8)).astype(bool)   # 5 m each side: sidewalks
+kerb=cv2.dilate(road.astype(np.uint8),np.ones((13,13),np.uint8)).astype(bool)        # 3 m: the pavement itself
 loc=cv2.blur(L,(41,41))
 red=(A>9)&(L>85)&(L<200)
 sdm=cv2.blur(L,(7,7)); sd=np.sqrt(np.maximum(cv2.blur(L*L,(7,7))-sdm*sdm,0))
@@ -73,9 +75,12 @@ for i in range(1,ws.max()+1):
     rm=np.zeros_like(m); cv2.fillPoly(rm,[P2.astype(np.int32)],1); sfr=(sand&(rm>0)).sum()/max(rm.sum(),1)
     rfr=(road&(rm>0)).sum()/max(rm.sum(),1)
     if rfr>0.25: continue
+    if ar*0.25<60 and kerb[ys,xs].mean()>0.6: continue   # small box on the pavement
     if rfill>0.62 and sfr<0.15:
         poly=np.stack([cx+box[:,0]*u[0]+box[:,1]*v[0], cy+box[:,0]*u[1]+box[:,1]*v[1]],1)
     else:
+        # ragged shapes along a road are the sidewalk, not a house (user report)
+        if near_road[ys,xs].mean()>0.5: continue
         poly=cv2.approxPolyDP(c,1.2,True).reshape(-1,2)
     y0b,y1b=ys.min(),ys.max()+1; x0b=max(xs.min()-24,0); x1b=xs.max()+1
     sub=m[y0b:y1b,x0b:x1b]
