@@ -34,6 +34,9 @@ sdm=cv2.blur(L,(7,7)); sd=np.sqrt(np.maximum(cv2.blur(L*L,(7,7))-sdm*sdm,0))
 sand=(sd<6)&(B>14.5)&(A>-3)&(L>150)
 sand=cv2.morphologyEx(sand.astype(np.uint8),cv2.MORPH_OPEN,np.ones((3,3),np.uint8)).astype(bool)
 cand=((L>loc+2)|red)&~sand&~veg&~shadow_core&~(shadow&(L<loc-10))&~road&(zone>0)
+# houses never touch the asphalt: the strip next to the road is pavement (user fix board, round 2)
+KERB=int(os.environ.get('KERB','5'))
+if KERB>0: cand=cand&~cv2.dilate(road.astype(np.uint8),np.ones((2*KERB+1,2*KERB+1),np.uint8)).astype(bool)
 cand=cv2.morphologyEx(cand.astype(np.uint8),cv2.MORPH_OPEN,np.ones((3,3),np.uint8))
 cand=cv2.morphologyEx(cand,cv2.MORPH_CLOSE,np.ones((3,3),np.uint8))
 # manual edits: remove polygons, add polygons
@@ -81,6 +84,8 @@ for i in range(1,ws.max()+1):
     else:
         # ragged shapes along a road are the sidewalk, not a house (user report)
         if near_road[ys,xs].mean()>0.5: continue
+        # houses in the planned district are rectangles: ragged, weird shapes are ground, walls or rubble (user)
+        if sol<float(os.environ.get('MINSOL','0.7')): continue
         poly=cv2.approxPolyDP(c,1.2,True).reshape(-1,2)
     y0b,y1b=ys.min(),ys.max()+1; x0b=max(xs.min()-24,0); x1b=xs.max()+1
     sub=m[y0b:y1b,x0b:x1b]
