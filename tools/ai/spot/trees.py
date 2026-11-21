@@ -40,11 +40,23 @@ if _os.path.exists('road.png'):
     for t in T:
         x,y=int(round(t[0])),int(round(t[1]))
         if 0<=x<W and 0<=y<H and rd[y,x]:
+            if t[2]<7: t[2]=-1; continue      # small dark blob on the asphalt = a car or its shadow (user edits)
             k=idx[lab_[y,x]]; nx,ny=float(xs[k]),float(ys[k])
             dx,dy=nx-t[0],ny-t[1]; d=max((dx*dx+dy*dy)**0.5,1e-3)
             t[0],t[1]=nx-dx/d*1.5,ny-dy/d*1.5    # trunk ~0.75 m inside the crown edge, on the pavement
             moved+=1
     print('trees moved off the road',moved)
+    T=[t for t in T if t[2]>0]
+# small dark blobs hugging a building are wall shadows, not trees (user edits)
+import json as _j
+if _os.path.exists('pieces.json'):
+    bm=np.zeros((H,W),np.uint8)
+    for q in _j.load(open('pieces.json')): cv2.fillPoly(bm,[np.array(q['poly'],np.int32)],1)
+    near_b=cv2.dilate(bm,np.ones((5,5),np.uint8))
+    T=[t for t in T if not (t[2]<4.5 and near_b[int(min(max(t[1],0),H-1)),int(min(max(t[0],0),W-1))])]
+# the person's own fixes from the fix board win
+T=[t for t in T if not any((t[0]-u)**2+(t[1]-v)**2<16 for u,v in Z.get('tree_remove',[]))]
+T+= [list(map(float,t)) for t in Z.get('tree_add',[])]
 json.dump(T,open('trees.json','w'))
 o=a.copy()
 for x,y,r in T: cv2.circle(o,(int(x),int(y)),int(r+0.5),(0,255,255),1)
