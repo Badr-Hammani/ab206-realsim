@@ -29,6 +29,7 @@ road=road|road2
 near_road=cv2.dilate(road.astype(np.uint8),np.ones((21,21),np.uint8)).astype(bool)   # 5 m each side: sidewalks
 kerb=cv2.dilate(road.astype(np.uint8),np.ones((13,13),np.uint8)).astype(bool)        # 3 m: the pavement itself
 loc=cv2.blur(L,(41,41))
+dark_rel=(L<cv2.blur(L,(21,21))-15)&~veg
 red=(A>9)&(L>85)&(L<200)
 sdm=cv2.blur(L,(7,7)); sd=np.sqrt(np.maximum(cv2.blur(L*L,(7,7))-sdm*sdm,0))
 sand=(sd<6)&(B>14.5)&(A>-3)&(L>150)
@@ -84,9 +85,17 @@ for i in range(1,ws.max()+1):
     else:
         # ragged shapes along a road are the sidewalk, not a house (user report)
         if near_road[ys,xs].mean()>0.5: continue
-        # houses in the planned district are rectangles: ragged, weird shapes are ground, walls or rubble (user)
-        if sol<float(os.environ.get('MINSOL','0.7')): continue
-        poly=cv2.approxPolyDP(c,1.2,True).reshape(-1,2)
+        # houses in the planned district are rectangles: a ragged shape is ground, walls or rubble (user),
+        # unless it casts a shadow (user: "this is a house, can't you see the shadow") -> keep its core as a rectangle
+        if sol<float(os.environ.get('MINSOL','0.7')):
+            ring=(cv2.dilate(m,np.ones((9,9),np.uint8))>0)&(m==0)
+            dk=(dark_rel[ring]).mean() if ring.any() else 0
+            if dk<float(os.environ.get('SHADOW_KEEP','0.18')): continue
+            q0,q1=np.percentile(pu,[12,88]); r0,r1=np.percentile(pv,[12,88])
+            bx=np.array([[q0,r0],[q1,r0],[q1,r1],[q0,r1]])
+            poly=np.stack([cx+bx[:,0]*u[0]+bx[:,1]*v[0], cy+bx[:,0]*u[1]+bx[:,1]*v[1]],1)
+        else:
+            poly=cv2.approxPolyDP(c,1.2,True).reshape(-1,2)
     y0b,y1b=ys.min(),ys.max()+1; x0b=max(xs.min()-24,0); x1b=xs.max()+1
     sub=m[y0b:y1b,x0b:x1b]
     kk=np.zeros((1,49),np.uint8); kk[0,24:]=1          # spread the piece 24 px to the west
