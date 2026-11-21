@@ -21,6 +21,7 @@ const AREAS := [
 	["City centre", 1800.0, -5200.0, 6200.0, -800.0, 18, 18],
 	["Mines north-east and east", 5000.0, -15000.0, 22000.0, 13000.0, 15, 16],
 	["Training core 16 km", -8200.0, -8200.0, 8200.0, 8200.0, 15, 15],
+	["Boulanoir spot", 6300.0, 300.0, 7300.0, 1300.0, 15, 18],
 ]
 
 var url := HdTiles.URL
@@ -163,7 +164,7 @@ func _fail(key: String) -> void:
 		print("HD prefetch: stopped, %d failures in a row" % _fail_streak)
 
 static func _done_file() -> String:
-	return TileFetch.cache_dir + "/prefetch_v1.done"
+	return TileFetch.cache_dir + "/prefetch_v2.done"
 
 func _mark_done() -> void:
 	DirAccess.make_dir_recursive_absolute(TileFetch.cache_dir)

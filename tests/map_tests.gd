@@ -227,7 +227,7 @@ func _test_prefetch(nm) -> void:
 	var cd := DirAccess.open(TF.cache_dir)
 	for sub in cd.get_directories():      # one folder per zoom level ("x" for the test server's URL)
 		on_disk += DirAccess.open(TF.cache_dir + "/" + sub).get_files().size()
-	var marked := FileAccess.file_exists(TF.cache_dir + "/prefetch_v1.done")
+	var marked := FileAccess.file_exists(TF.cache_dir + "/prefetch_v2.done")
 	# second run finds everything on disk and downloads nothing
 	pf.start()
 	var again: int = pf.queue.size()

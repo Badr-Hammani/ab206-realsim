@@ -31,6 +31,7 @@ var chase_dist := 16.0
 var free_pos := Vector3.ZERO
 var free_yaw := 0.0
 var free_pitch := 0.0
+var hold_view := false        # test pictures: free camera keeps its own direction (no look at the helicopter)
 var eye := Vector3(0.38, 0.66, -1.1)     # right seat (pilot in command seat of the 206)
 var _smooth_basis := Basis.IDENTITY
 var _smooth_pos := Vector3.ZERO
@@ -154,7 +155,7 @@ func update_camera(heli_xform: Transform3D, dt: float) -> void:
 			free_pos += b * mv * spd * dt
 			cam.global_transform = Transform3D(b, free_pos)
 			# always look at the helicopter unless the user is steering the view
-			if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and mv == Vector3.ZERO:
+			if not hold_view and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and mv == Vector3.ZERO:
 				cam.look_at(heli_xform.origin, Vector3.UP)
 				free_yaw = cam.global_rotation.y
 				free_pitch = cam.global_rotation.x

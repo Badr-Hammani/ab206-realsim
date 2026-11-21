@@ -6,6 +6,11 @@ var VIEWS := [
 	["dense_low", Vector2(2850, -3450), 45.0, -80.0, -14.0],
 	["garden_low", Vector2(3550, -1450), 60.0, -45.0, -20.0],
 	["city_high", Vector2(2000, -1200), 450.0, -50.0, -22.0],
+	# Boulanoir spot (tools/ai/spot), centre 6787, 808
+	["boul_top", Vector2(6787, 808), 700.0, 0.0, -89.5],
+	["boul_high", Vector2(6787, 1250), 300.0, 0.0, -38.0],
+	["boul_low", Vector2(6930, 880), 60.0, 20.0, -22.0],
+	["boul_village", Vector2(6640, 1130), 55.0, 0.0, -22.0],
 ]
 func _initialize() -> void:
 	var out := "/tmp/shots"
@@ -21,11 +26,13 @@ func _initialize() -> void:
 	root.add_child(main)
 	for i in 10:
 		await process_frame
+	main._auto_q_off = true      # lavapipe is slow: keep auto-quality from lowering the preset
 	main.apply_preset(3)
 	main.menu.visible = false
 	main.hud.visible = false
 	main._set_paused(false)
 	main.cam_rig.mode = 2
+	main.cam_rig.hold_view = true
 	main.instructor.message = ""
 	for v in VIEWS:
 		if only != "" and not (v[0] in only.split(",")):
@@ -36,6 +43,8 @@ func _initialize() -> void:
 		main.cam_rig.free_yaw = deg_to_rad(v[3])
 		main.cam_rig.free_pitch = deg_to_rad(v[4])
 		for i in int(OS.get_environment("SHOT_FRAMES") if OS.get_environment("SHOT_FRAMES") != "" else "260"):
+			if not main.world.hd_ground.enabled:
+				main.world.hd_ground.set_enabled(true)
 			await process_frame
 		root.get_viewport().get_texture().get_image().save_jpg(out + "/" + v[0] + ".jpg", 0.9)
 		print("shot ", v[0], " hd ", main.world.hd_ground.describe())
