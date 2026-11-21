@@ -72,13 +72,17 @@ for i in range(1,ws.max()+1):
     cx,cy=xs.mean(),ys.mean(); t=ang_map[int(cy),int(cx)]
     u=np.array([np.cos(t),np.sin(t)]); v=np.array([-u[1],u[0]])
     P=np.stack([xs-cx,ys-cy],1); pu=P@u; pv=P@v
-    u0,u1=np.percentile(pu,[3,97]); v0,v1=np.percentile(pv,[3,97])
+    PCT=float(os.environ.get('PCT','8')); u0,u1=np.percentile(pu,[PCT,100-PCT]); v0,v1=np.percentile(pv,[PCT,100-PCT])
     box=np.array([[u0,v0],[u1,v0],[u1,v1],[u0,v1]])
     rect_area=(u1-u0+1)*(v1-v0+1); rfill=ar/max(rect_area,1)
     P2=np.stack([cx+box[:,0]*u[0]+box[:,1]*v[0], cy+box[:,0]*u[1]+box[:,1]*v[1]],1)
     rm=np.zeros_like(m); cv2.fillPoly(rm,[P2.astype(np.int32)],1); sfr=(sand&(rm>0)).sum()/max(rm.sum(),1)
     rfr=(road&(rm>0)).sum()/max(rm.sum(),1)
     if rfr>0.25: continue
+    # every real house casts a shadow on at least one side (user); pavement and dirt lots do not
+    if float(os.environ.get('REQ_SHADOW','0.1'))>0:
+        ring=(cv2.dilate(m,np.ones((7,7),np.uint8))>0)&(m==0)
+        if ring.any() and dark_rel[ring].mean()<float(os.environ.get('REQ_SHADOW','0.1')): continue
     if ar*0.25<60 and kerb[ys,xs].mean()>0.6: continue   # small box on the pavement
     if rfill>0.62 and sfr<0.15:
         poly=np.stack([cx+box[:,0]*u[0]+box[:,1]*v[0], cy+box[:,0]*u[1]+box[:,1]*v[1]],1)
