@@ -31,6 +31,12 @@ extends Node
 
 const HTTPS_PORT := 8206
 const HTTP_PORT := 8207
+## If 8206/8207 are taken (most often a second AB206 window that is still open, or one that did not
+## close properly), the server moves to the next free pair and says so; the QR code and address
+## follow the ports really in use.
+const PORT_PAIRS := [[8206, 8207], [8216, 8217], [8226, 8227], [8236, 8237]]
+var https_port := HTTPS_PORT
+var http_port := HTTP_PORT
 const CERT_PATH := "user://phone_tls.crt"
 const KEY_PATH := "user://phone_tls.key"
 const PAGE_PATH := "res://phone/phone.html"
@@ -104,17 +110,34 @@ func start() -> bool:
 	else:
 		_page = "<html><body>phone.html missing</body></html>".to_utf8_buffer()
 	_tls_opts = _make_tls()
-	_srv_tls = TCPServer.new()
 	var e1 := ERR_UNAVAILABLE
-	if _tls_opts != null:
-		e1 = _srv_tls.listen(HTTPS_PORT, "*")
-	_srv_plain = TCPServer.new()
-	var e2 := _srv_plain.listen(HTTP_PORT, "*")
+	var e2 := ERR_UNAVAILABLE
+	var moved := false
+	for pair in PORT_PAIRS:
+		_srv_tls = TCPServer.new()
+		_srv_plain = TCPServer.new()
+		e1 = _srv_tls.listen(pair[0], "*") if _tls_opts != null else ERR_UNAVAILABLE
+		e2 = _srv_plain.listen(pair[1], "*")
+		if e2 == OK and (e1 == OK or _tls_opts == null):
+			https_port = pair[0]
+			http_port = pair[1]
+			break
+		# this pair is (partly) taken: free what we got and try the next pair
+		_srv_tls.stop()
+		_srv_plain.stop()
+		e1 = ERR_UNAVAILABLE
+		e2 = ERR_UNAVAILABLE
+		moved = true
 	if e1 != OK and e2 != OK:
-		error_text = "Could not open ports %d/%d (another program uses them?)" % [HTTPS_PORT, HTTP_PORT]
+		error_text = "Could not open the phone ports (8206-8237). Another AB206 window is probably still open: close it (taskbar, or Task Manager > Godot), then press Start phone server."
 		return false
 	if e1 != OK:
-		error_text = "HTTPS port %d unavailable; only plain HTTP %d is running." % [HTTPS_PORT, HTTP_PORT]
+		error_text = "HTTPS port unavailable; only plain HTTP %d is running." % http_port
+	elif moved:
+		error_text = "Ports 8206/8207 are busy (another AB206 window still open?), so the phone server uses %d/%d. Use the new address / QR code below." % [https_port, http_port]
+	var html := _page.get_string_from_utf8()
+	if html.find("__HTTPS_PORT__") >= 0:
+		_page = html.replace("__HTTPS_PORT__", str(https_port)).to_utf8_buffer()
 	running = true
 	addresses = local_addresses()
 	return true
@@ -151,25 +174,53 @@ func _make_tls() -> TLSOptions:
 		return null
 	return TLSOptions.server(key, cert)
 
+## IPv4 addresses a phone could use, best first. The QR code uses the first one.
+## Virtual adapters (Hyper-V "vEthernet", WSL, VirtualBox, VMware, Docker...) exist only inside the PC,
+## so they go last; Wi-Fi comes first, then wired Ethernet. (Sorting the plain address text put
+## Hyper-V's 172.20.0.1 before an iPhone hotspot's 172.20.10.5 - the phone could not load the page.)
 static func local_addresses() -> PackedStringArray:
-	var out: PackedStringArray = []
+	var scored := []
+	var seen := {}
+	for itf in IP.get_local_interfaces():
+		var nm := (str(itf.get("friendly", "")) + " " + str(itf.get("name", ""))).to_lower()
+		for a in itf.get("addresses", []):
+			a = str(a)
+			if seen.has(a) or not _usable(a):
+				continue
+			seen[a] = true
+			scored.append([_score(a, nm), a])
+	# fallback when the interface list is empty (some platforms)
 	for a in IP.get_local_addresses():
-		if a.contains(":"):
-			continue      # IPv6
-		if a.begins_with("127.") or a.begins_with("169.254."):
-			continue
-		out.append(a)
-	# private LAN ranges first (Wi-Fi is normally 192.168.x.x or 10.x.x.x)
-	out.sort()
-	var lan: PackedStringArray = []
-	var other: PackedStringArray = []
-	for a in out:
-		if a.begins_with("192.168.") or a.begins_with("10.") or _is_172_private(a):
-			lan.append(a)
-		else:
-			other.append(a)
-	lan.append_array(other)
-	return lan
+		a = str(a)
+		if not seen.has(a) and _usable(a):
+			seen[a] = true
+			scored.append([_score(a, ""), a])
+	scored.sort_custom(func(x, y) -> bool: return x[0] > y[0] if x[0] != y[0] else str(x[1]) < str(y[1]))
+	var out: PackedStringArray = []
+	for e in scored:
+		out.append(e[1])
+	return out
+
+static func _usable(a: String) -> bool:
+	return not a.contains(":") and not a.begins_with("127.") and not a.begins_with("169.254.") and a.count(".") == 3
+
+const _VIRTUAL := ["vethernet", "hyper-v", "wsl", "virtualbox", "vbox", "vmware", "vmnet", "docker", "loopback", "npcap", "bluetooth", "zerotier", "tailscale", "hamachi", "tap-", "tun", "wintun", "nordlynx", "openvpn", "default switch"]
+
+static func _score(a: String, nm: String) -> int:
+	var sc := 0
+	if a.begins_with("192.168.") or a.begins_with("10.") or _is_172_private(a):
+		sc += 10
+	if a.begins_with("172.20.10.") or a.begins_with("192.168.43.") or a.begins_with("192.168.137."):
+		sc += 5          # iPhone / Android hotspot / Windows hotspot ranges
+	if nm.contains("wi-fi") or nm.contains("wifi") or nm.contains("wlan") or nm.contains("wireless"):
+		sc += 40
+	elif nm.contains("ethernet") and not nm.contains("vethernet"):
+		sc += 20
+	for v in _VIRTUAL:
+		if nm.contains(v):
+			sc -= 100
+			break
+	return sc
 
 static func _is_172_private(a: String) -> bool:
 	if not a.begins_with("172."):
@@ -177,9 +228,11 @@ static func _is_172_private(a: String) -> bool:
 	var p := a.split(".")
 	return p.size() > 1 and int(p[1]) >= 16 and int(p[1]) <= 31
 
+var addr_pick := 0      # which of `addresses` the QR code shows (F10 "Use another address")
+
 func url(secure := true) -> String:
-	var ip := addresses[0] if addresses.size() > 0 else "<this-pc-ip>"
-	return ("https://%s:%d" % [ip, HTTPS_PORT]) if secure else ("http://%s:%d" % [ip, HTTP_PORT])
+	var ip := addresses[clampi(addr_pick, 0, addresses.size() - 1)] if addresses.size() > 0 else "<this-pc-ip>"
+	return ("https://%s:%d" % [ip, https_port]) if secure else ("http://%s:%d" % [ip, http_port])
 
 # ------------------------------------------------------------------- polling
 func _process(dt: float) -> void:

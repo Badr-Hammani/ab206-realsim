@@ -151,7 +151,18 @@ func _rebuild() -> void:
 		left.add_child(G.label("First time: accept the certificate warning (\"Advanced\" > \"Proceed\", or \"Show details\" > \"visit this website\" on iPhone). It is this simulator's own certificate and only works on your local network.", 12, G.TEXT3, true))
 		left.add_child(G.label("Motion not working? Try " + phone.url(false) + "  (plain HTTP, some Android browsers allow it).", 12, G.TEXT3, true))
 		if phone.addresses.size() > 1:
-			left.add_child(G.label("Other addresses of this PC: " + ", ".join(phone.addresses.slice(1)), 12, G.TEXT3, true))
+			var ah := HBoxContainer.new()
+			ah.add_theme_constant_override("separation", 10)
+			var al := G.label("Page does not load on the phone? This PC has %d addresses - try the next one:" % phone.addresses.size(), 12, G.TEXT3, true)
+			al.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ah.add_child(al)
+			var ab := Button.new()
+			ab.text = "Use another address"
+			ab.pressed.connect(func() -> void:
+				phone.addr_pick = (phone.addr_pick + 1) % phone.addresses.size()
+				_rebuild())
+			ah.add_child(ab)
+			left.add_child(ah)
 		left.add_child(G.label("Windows asks once if Godot may use the network: allow it.", 12, G.TEXT3, true))
 	else:
 		left.add_child(G.label("Start the server, then open the address on your phone. Keyboard, mouse and joystick keep working for everything the phones do not control.", 13, G.TEXT2, true))
