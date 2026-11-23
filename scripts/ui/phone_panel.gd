@@ -110,7 +110,7 @@ func _rebuild() -> void:
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.add_child(G.label("AB206 REALSIM  ·  SETUP", 12, G.TEXT3))
 	tv.add_child(G.label("Phone controller", 30, G.TEXT))
-	tv.add_child(G.label("Up to three phones: cyclic, collective and pedals (feet). Settings are saved.", 13, G.TEXT2))
+	tv.add_child(G.label("Two phones fly everything: cyclic + collective (with pedals). A third phone for the feet is optional.", 13, G.TEXT2))
 	head.add_child(tv)
 	var done := Button.new()
 	done.text = "Done"
@@ -220,6 +220,26 @@ func _rebuild() -> void:
 	_slider(c2, "Lever angle, down to full up", 15.0, 70.0, 1.0, phone.coll_range_deg, "%.0f°", func(v: float) -> void: phone.coll_range_deg = v)
 	_slider(c2, "Rest band at the bottom", 0.0, 8.0, 0.5, phone.coll_deadband_deg, "%.1f°", func(v: float) -> void: phone.coll_deadband_deg = v)
 	_switch(c2, "Invert collective", phone.coll_invert, func(v: bool) -> void: phone.coll_invert = v)
+	var ph := HBoxContainer.new()
+	var pl := G.label("Pedals on this phone", 14, G.TEXT)
+	pl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ph.add_child(pl)
+	for i in 3:
+		var pb := Button.new()
+		pb.text = ["Off", "Turn", "Tilt"][i]
+		pb.toggle_mode = true
+		pb.button_pressed = phone.coll_pedals == i
+		pb.pressed.connect(func() -> void:
+			phone.coll_pedals = i
+			phone.calibrate("collective")
+			_rebuild())
+		ph.add_child(pb)
+	c2.add_child(ph)
+	if phone.coll_pedals > 0:
+		_slider(c2, "Turn / tilt for full pedal", 8.0, 60.0, 1.0, phone.coll_ped_range_deg, "%.0f°", func(v: float) -> void: phone.coll_ped_range_deg = v)
+		_slider(c2, "Pedal dead zone", 0.0, 8.0, 0.5, phone.coll_ped_deadzone_deg, "%.1f°", func(v: float) -> void: phone.coll_ped_deadzone_deg = v)
+		_switch(c2, "Invert pedals", phone.coll_ped_invert, func(v: bool) -> void: phone.coll_ped_invert = v)
+		c2.add_child(G.label("Turn: point the phone's front edge left/right, like steering = left/right pedal (gyro heading: can drift slowly, N re-centres). Tilt: right side down = right pedal (no drift; the twist grip is then off). A separate pedal phone, if connected, takes priority.", 12, G.TEXT3, true))
 	_switch(c2, "Twist grip = throttle (rotate about long axis)", phone.twist_throttle, func(v: bool) -> void: phone.twist_throttle = v)
 	_switch(c2, "Invert twist direction", phone.twist_invert, func(v: bool) -> void: phone.twist_invert = v)
 	_slider(c2, "Twist to idle", 15.0, 70.0, 1.0, phone.twist_range_deg, "%.0f°", func(v: float) -> void: phone.twist_range_deg = v)
@@ -271,6 +291,10 @@ func _process(_dt: float) -> void:
 			var eng: bool = controls.phone_engaged(r)
 			col = G.GOOD if eng else G.WARN
 			var mv := "tilt fwd %+.1f°  right %+.1f°" % [tl.x, tl.y]
+			if r == "collective" and phone.coll_has_pedals():
+				mv += "  ·  pedals %+.1f° %s" % [phone.coll_pedal_deg(), "IN CONTROL" if controls.phone_ped_engaged else ""]
+			elif r == "collective" and phone.coll_pedals == 1 and not s.get("has_yaw", false):
+				mv += "  ·  no heading from this phone: set its pedals to Tilt"
 			if r == "pedals":
 				mv = "%s %+.1f° (right +)" % ["turned" if phone.ped_mode == 0 else "rocked", phone.pedal_deg()]
 				if phone.ped_mode == 0 and not s.get("has_yaw", false):

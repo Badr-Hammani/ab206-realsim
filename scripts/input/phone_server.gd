@@ -65,6 +65,10 @@ var coll_invert := false
 var twist_throttle := false      # collective phone also works the twist grip
 var twist_range_deg := 35.0
 var twist_invert := false
+var coll_pedals := 1             # collective phone also works the pedals: 0 off, 1 turn it left/right (heading), 2 tilt it left/right
+var coll_ped_range_deg := 25.0
+var coll_ped_deadzone_deg := 2.0
+var coll_ped_invert := false
 var ped_mode := 0                # 0 = turn (turntable, heading), 1 = rock (left/right tilt)
 var ped_range_deg := 20.0        # bar rotation / rocker tilt for full pedal
 var ped_deadzone_deg := 1.0
@@ -252,6 +256,8 @@ func _process(dt: float) -> void:
 		for c in _conns:
 			if c.ws and c.role != "":
 				_ws_send(c, "s," + c.role + "," + str(role_status.get(c.role, "")))
+				if c.role == "collective":
+					_ws_send(c, "m," + ["off", "turn", "tilt"][coll_pedals])
 				if c.role == "pedals":
 					_ws_send(c, "m," + ("turn" if ped_mode == 0 else "rock"))
 
@@ -597,8 +603,26 @@ func pedal_deg() -> float:
 		return _wrap180(float(s["yaw"]) - float(s["y0"]))
 	return _wrap180(float(s["roll"]) - float(s["r0"]))      # right edge down = right pedal
 
+## Collective-phone pedal angle, degrees, + = right pedal (before invert). Only when no pedal phone.
+## Turn: point the phone's front edge to the right (clockwise seen from above, alpha falls) = right pedal.
+## Tilt: right edge down = right pedal.
+func coll_pedal_deg() -> float:
+	if not roles.has("collective"):
+		return 0.0
+	var s: Dictionary = roles["collective"]
+	if coll_pedals == 1:
+		return _wrap180(float(s["y0"]) - float(s["yaw"]))
+	if coll_pedals == 2:
+		return _wrap180(float(s["roll"]) - float(s["r0"]))
+	return 0.0
+
+## True when the collective phone is set to work the pedals and no separate pedal phone is connected.
+func coll_has_pedals() -> bool:
+	return coll_pedals > 0 and roles.has("collective") and not roles.has("pedals") \
+		and (coll_pedals == 2 or bool(roles["collective"].get("has_yaw", false)))
+
 ## Normalised control outputs, low-pass filtered. Call once per physics tick.
-## Returns {"lon","lat"} for cyclic, {"coll","thr"} for collective, {"ped"} for pedals.
+## Returns {"lon","lat"} for cyclic, {"coll","thr","ped"} for collective, {"ped"} for pedals.
 func axes(role: String, dt: float) -> Dictionary:
 	var s: Dictionary = roles[role]
 	var t := tilt_deg(role)
@@ -613,7 +637,8 @@ func axes(role: String, dt: float) -> Dictionary:
 	else:
 		var up := -t.x * (-1.0 if coll_invert else 1.0)     # front edge raised = up
 		a = clampf((up - coll_deadband_deg) / maxf(coll_range_deg, 5.0), 0.0, 1.0)
-		if twist_throttle:
+		b = _shape_centered(coll_pedal_deg(), coll_ped_range_deg, coll_ped_deadzone_deg, 0.0) * (-1.0 if coll_ped_invert else 1.0)
+		if twist_throttle and coll_pedals != 2:      # tilt is the pedals then
 			var tw := t.y * (-1.0 if twist_invert else 1.0)    # roll one way = close
 			c = 1.0 - clampf((tw - 6.0) / maxf(twist_range_deg, 5.0), 0.0, 1.0)
 	var k := 1.0 if s["first"] or smoothing_ms <= 0.0 else clampf(dt / (smoothing_ms / 1000.0), 0.0, 1.0)
@@ -625,7 +650,7 @@ func axes(role: String, dt: float) -> Dictionary:
 		return {"ped": float(s["f_a"])}
 	if role == "cyclic":
 		return {"lon": float(s["f_a"]), "lat": float(s["f_b"])}
-	return {"coll": float(s["f_a"]), "thr": float(s["f_c"])}
+	return {"coll": float(s["f_a"]), "thr": float(s["f_c"]), "ped": float(s["f_b"])}
 
 var _pending_buzz: Array = []
 var _post_active_t := -100.0
@@ -646,7 +671,8 @@ func _now() -> float:
 # -------------------------------------------------------------------- config
 const _KEYS := ["cyc_range_deg", "cyc_deadzone_deg", "cyc_expo", "cyc_invert_lon", "cyc_invert_lat",
 	"coll_range_deg", "coll_deadband_deg", "coll_invert", "twist_throttle", "twist_range_deg", "twist_invert", "smoothing_ms",
-	"ped_mode", "ped_range_deg", "ped_deadzone_deg", "ped_invert"]
+	"ped_mode", "ped_range_deg", "ped_deadzone_deg", "ped_invert",
+	"coll_pedals", "coll_ped_range_deg", "coll_ped_deadzone_deg", "coll_ped_invert"]
 
 var autostart := false
 

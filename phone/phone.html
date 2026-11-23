@@ -71,14 +71,16 @@ var HOW = {
     "Rest your elbow on something: small, smooth movements.",
   collective: "<b>Collective:</b> hold the phone in your left hand, screen up, top edge pointing forward, like the end of the lever. " +
     "Press Start with it in the <b>lever fully down</b> position. <b>Raise the top edge</b> to pull collective up (the real lever pivots at its back end, so it is an angle, not a height). " +
-    "About 35 degrees = fully up. It stays where you hold it. Optional on the PC: rotate the phone about its long axis = throttle twist grip.",
+    "About 35 degrees = fully up. It stays where you hold it. " +
+    "<b>Pedals on this phone</b> (on by default, change in F10 on the PC): <b>turn</b> the phone left/right like steering (front edge to the right = right pedal), or in Tilt mode tip it left/right. " +
+    "Press Start with the pedals centred (phone pointing straight ahead). Optional on the PC: rotate the phone about its long axis = throttle twist grip.",
   pedals: "<b>Pedals:</b> lay the phone <b>flat, screen up</b>, on your pedal bar or foot board, and press Start with your <b>feet level</b> (pedals centred). " +
     "<b>Turn mode</b> (pedal bar on a turntable / lazy susan): right foot forward turns the bar = right pedal (nose right). " +
     "<b>Rock mode</b> (board that tilts left/right): right side down = right pedal. Choose the mode on the PC (F10). " +
     "Turn mode uses the phone's gyro heading, which can drift slowly - tap <b>Set neutral here</b> (or N on the PC) with your feet level if the centre moves."
 };
 var ws = null, usePost = false, connected = false, running = false;
-var alpha = null, pedMode = "turn";
+var alpha = null, pedMode = "turn", collPed = "turn";
 var beta = 0, gamma = 0, have = false, nEv = 0, rate = 0, rateT = performance.now();
 var lastSend = 0, wakeLock = null, engaged = "", simText = "";
 var p0 = null, r0 = null;     // local copy only for drawing
@@ -99,7 +101,7 @@ if (role === "cyclic" || role === "collective" || role === "pedals") pickRole(ro
 if (!window.isSecureContext) {
   var w = document.getElementById("secwarn");
   w.classList.remove("hidden");
-  var hs = "https://" + location.hostname + ":8206";
+  var hs = "https://" + location.hostname + ":__HTTPS_PORT__";
   w.innerHTML = "This page is not on a secure (https) address, so most phone browsers will NOT give it the motion sensors. " +
     "If nothing moves after Start, open <b>" + hs + "</b> instead and accept the certificate warning (it is this simulator's own certificate).";
 }
@@ -184,7 +186,7 @@ function watchdog() {
 function handle(t) {
   var f = t.split(",");
   if (f[0] === "n") { p0 = null; r0 = null; a0 = null; }
-  else if (f[0] === "m") { pedMode = f[1] === "rock" ? "rock" : "turn"; }
+  else if (f[0] === "m") { if (role === "collective") collPed = f[1]; else pedMode = f[1] === "rock" ? "rock" : "turn"; }
   else if (f[0] === "q") { var r = performance.now() - parseFloat(f[1]); rtt = rtt < 0 ? r : rtt * 0.7 + r * 0.3; }
   else if (f[0] === "s") { engaged = f[2] || ""; simText = f.slice(3).join(", "); }
   else if (f[0] === "v" && navigator.vibrate) { navigator.vibrate(parseInt(f[1], 10) || 50); }
@@ -282,6 +284,14 @@ function draw() {
     c.fillStyle = "#2c353e"; c.fillRect(W / 2 - 40, 20, 80, H - 40);
     c.fillStyle = "#f2b53a"; c.fillRect(W / 2 - 40, 20 + (H - 40) * (1 - up), 80, (H - 40) * up);
     c.fillStyle = "#e8edf2"; c.font = "15px system-ui"; c.fillText("UP", W / 2 + 52, 34); c.fillText("DOWN", W / 2 + 52, H - 22);
+    if (collPed !== "off") {
+      var cp = collPed === "tilt" ? t[1] : (alpha === null ? 0 : -(((alpha - (a0 === null ? (a0 = alpha) : a0) + 540) % 360) - 180));
+      var px = Math.max(-1, Math.min(1, cp / 25)), by = H - 16;
+      c.fillStyle = "#2c353e"; c.fillRect(20, by - 8, W / 2 - 80, 16);
+      c.fillStyle = "#f2b53a"; var mid = 20 + (W / 2 - 80) / 2;
+      if (px >= 0) c.fillRect(mid, by - 8, px * (W / 2 - 80) / 2, 16); else c.fillRect(mid + px * (W / 2 - 80) / 2, by - 8, -px * (W / 2 - 80) / 2, 16);
+      c.fillStyle = "#e8edf2"; c.fillRect(mid - 1, by - 12, 2, 24); c.fillText("PEDALS (" + collPed + ")", 20, by - 16);
+    }
   }
   var en = document.getElementById("engage");
   if (!have) { en.textContent = permNote || (window.isSecureContext ? "No motion data yet - move the phone" : "No motion data: open the https:// address instead"); en.style.background = "#3a1f1c"; }

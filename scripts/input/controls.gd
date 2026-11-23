@@ -16,6 +16,9 @@ var pedal := 0.0
 var throttle := 1.0
 
 var mouse_cyclic := true
+signal mouse_cyclic_toggled(on: bool)
+var touch_owns_mouse := false       # touch controls switched the mouse cyclic off (not saved)
+const CFG_VERSION := 2              # 2 (M2.23): mouse cyclic switched back on once (a touch had saved it off)
 var mouse_sensitivity := 1.0
 var invert_mouse_y := false
 var mouse_look_held := false
@@ -50,6 +53,8 @@ var phone_ped_engaged := false
 var phone_ped := 0.0
 var phone_ped_off := 0.0
 var _phone_ped_prev := 0.0
+var _phone_ped_src := ""
+var _coll_axes := {}
 var _phone_cyc_prev := Vector2.ZERO
 var _phone_coll_prev := 0.0
 
@@ -134,6 +139,7 @@ func _update_phone(dt: float) -> void:
 		phone_cyc_engaged = false
 	if phone.has_role("collective"):
 		var ac: Dictionary = phone.axes("collective", dt)
+		_coll_axes = ac
 		phone_coll = ac["coll"]
 		phone_thr = ac["thr"]
 		if not phone_coll_engaged:
@@ -142,7 +148,7 @@ func _update_phone(dt: float) -> void:
 		else:
 			phone_coll_off = move_toward(phone_coll_off, 0.0, absf(phone_coll - _phone_coll_prev) * PHONE_CATCHUP)
 		_phone_coll_prev = phone_coll
-		if phone.twist_throttle:
+		if phone.twist_throttle and phone.coll_pedals != 2:
 			if not phone_thr_engaged and absf(phone_thr - throttle) < 0.08:
 				phone_thr_engaged = true
 		else:
@@ -150,8 +156,17 @@ func _update_phone(dt: float) -> void:
 	else:
 		phone_coll_engaged = false
 		phone_thr_engaged = false
+	var ped_src := ""
 	if phone.has_role("pedals"):
-		phone_ped = float(phone.axes("pedals", dt)["ped"])
+		ped_src = "pedals"
+	elif phone.running and phone.coll_has_pedals():
+		ped_src = "collective"
+	if ped_src != "":
+		var pv := float(phone.axes("pedals", dt)["ped"]) if ped_src == "pedals" else float(_coll_axes.get("ped", 0.0))
+		if ped_src != _phone_ped_src:
+			phone_ped_engaged = false       # source changed (pedal phone joined/left): take over again without a jump
+		_phone_ped_src = ped_src
+		phone_ped = pv
 		if not phone_ped_engaged:
 			phone_ped_engaged = true
 			phone_ped_off = pedal - phone_ped      # no jump at take-over; the difference melts as the feet move
@@ -187,6 +202,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			collective = clampf(collective - 0.015, 0.0, 1.0)
 	if event.is_action_pressed("toggle_mouse_cyclic"):
 		mouse_cyclic = not mouse_cyclic
+		touch_owns_mouse = false
+		mouse_cyclic_toggled.emit(mouse_cyclic)
 	if event.is_action_pressed("cyclic_center"):
 		stick_mouse = Vector2.ZERO
 
@@ -280,7 +297,8 @@ func save_config() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("mouse", "sensitivity", mouse_sensitivity)
 	cf.set_value("mouse", "invert_y", invert_mouse_y)
-	cf.set_value("mouse", "cyclic", mouse_cyclic)
+	cf.set_value("mouse", "cyclic", mouse_cyclic or touch_owns_mouse)
+	cf.set_value("mouse", "cfg_version", CFG_VERSION)
 	for fn in bindings:
 		cf.set_value("joy", fn, bindings[fn])
 	cf.save(CFG_PATH)
@@ -292,6 +310,8 @@ func load_config() -> void:
 	mouse_sensitivity = cf.get_value("mouse", "sensitivity", 1.0)
 	invert_mouse_y = cf.get_value("mouse", "invert_y", false)
 	mouse_cyclic = cf.get_value("mouse", "cyclic", true)
+	if int(cf.get_value("mouse", "cfg_version", 1)) < CFG_VERSION:
+		mouse_cyclic = true     # older builds saved it OFF after a touch on a touch-screen PC
 	if cf.has_section("joy"):
 		for fn in cf.get_section_keys("joy"):
 			bindings[fn] = cf.get_value("joy", fn)
