@@ -55,6 +55,9 @@ var phone_ped_off := 0.0
 var _phone_ped_prev := 0.0
 var _phone_ped_src := ""
 var _coll_axes := {}
+var _all_axes := {}
+var _phone_cyc_src := ""
+var _phone_coll_src := ""
 var _phone_cyc_prev := Vector2.ZERO
 var _phone_coll_prev := 0.0
 
@@ -123,8 +126,13 @@ func _update_phone(dt: float) -> void:
 		return
 	if phone.running:
 		phone.poll()     # read the newest phone samples right before this physics tick uses them
-	if phone.has_role("cyclic"):
-		var ax: Dictionary = phone.axes("cyclic", dt)
+	_all_axes = phone.axes("all", dt) if phone.has_role("all") else {}
+	var cyc_src := "cyclic" if phone.has_role("cyclic") else ("all" if not _all_axes.is_empty() else "")
+	if cyc_src != _phone_cyc_src:
+		phone_cyc_engaged = false        # a phone joined/left: take over again from the current stick, no jump
+	_phone_cyc_src = cyc_src
+	if cyc_src != "":
+		var ax: Dictionary = phone.axes("cyclic", dt) if cyc_src == "cyclic" else _all_axes
 		phone_cyc = Vector2(ax["lat"], ax["lon"])
 		if not phone_cyc_engaged:
 			phone_cyc_engaged = true
@@ -137,8 +145,12 @@ func _update_phone(dt: float) -> void:
 	elif phone_cyc_engaged:
 		stick_mouse = _phone_cyc_out()   # phone lost: the stick stays where it was
 		phone_cyc_engaged = false
-	if phone.has_role("collective"):
-		var ac: Dictionary = phone.axes("collective", dt)
+	var coll_src := "collective" if phone.has_role("collective") else ("all" if not _all_axes.is_empty() else "")
+	if coll_src != _phone_coll_src:
+		phone_coll_engaged = false
+	_phone_coll_src = coll_src
+	if coll_src != "":
+		var ac: Dictionary = phone.axes("collective", dt) if coll_src == "collective" else _all_axes
 		_coll_axes = ac
 		phone_coll = ac["coll"]
 		phone_thr = ac["thr"]
@@ -148,7 +160,7 @@ func _update_phone(dt: float) -> void:
 		else:
 			phone_coll_off = move_toward(phone_coll_off, 0.0, absf(phone_coll - _phone_coll_prev) * PHONE_CATCHUP)
 		_phone_coll_prev = phone_coll
-		if phone.twist_throttle and phone.coll_pedals != 2:
+		if phone.twist_throttle and phone.coll_pedals != 2 and coll_src == "collective":
 			if not phone_thr_engaged and absf(phone_thr - throttle) < 0.08:
 				phone_thr_engaged = true
 		else:
@@ -161,8 +173,16 @@ func _update_phone(dt: float) -> void:
 		ped_src = "pedals"
 	elif phone.running and phone.coll_has_pedals():
 		ped_src = "collective"
+	elif not _all_axes.is_empty() and bool(phone.roles["all"].get("has_yaw", false)):
+		ped_src = "all"
 	if ped_src != "":
-		var pv := float(phone.axes("pedals", dt)["ped"]) if ped_src == "pedals" else float(_coll_axes.get("ped", 0.0))
+		var pv := 0.0
+		if ped_src == "pedals":
+			pv = float(phone.axes("pedals", dt)["ped"])
+		elif ped_src == "all":
+			pv = float(_all_axes.get("ped", 0.0))
+		else:
+			pv = float(_coll_axes.get("ped", 0.0))
 		if ped_src != _phone_ped_src:
 			phone_ped_engaged = false       # source changed (pedal phone joined/left): take over again without a jump
 		_phone_ped_src = ped_src
@@ -182,6 +202,7 @@ func phone_engaged(role: String) -> bool:
 	match role:
 		"cyclic": return phone_cyc_engaged
 		"collective": return phone_coll_engaged
+		"all": return phone_cyc_engaged or phone_coll_engaged
 		"pedals": return phone_ped_engaged
 	return false
 

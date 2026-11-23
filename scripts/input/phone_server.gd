@@ -232,6 +232,7 @@ static func _is_172_private(a: String) -> bool:
 	var p := a.split(".")
 	return p.size() > 1 and int(p[1]) >= 16 and int(p[1]) <= 31
 
+var _addr_timer := 2.0
 var addr_pick := 0      # which of `addresses` the QR code shows (F10 "Use another address")
 
 func url(secure := true) -> String:
@@ -250,6 +251,15 @@ func _process(dt: float) -> void:
 			lost_at[r] = now
 			drops[r] = int(drops.get(r, 0)) + 1
 			role_lost.emit(r)
+	# the PC's address changes when Wi-Fi / hotspot changes: re-detect so the QR code follows
+	_addr_timer -= dt
+	if _addr_timer <= 0.0:
+		_addr_timer = 2.0
+		var na := local_addresses()
+		if na != addresses:
+			var cur := addresses[addr_pick] if addr_pick < addresses.size() else ""
+			addresses = na
+			addr_pick = maxi(na.find(cur), 0)
 	_status_timer -= dt
 	if _status_timer <= 0.0:
 		_status_timer = 0.2
@@ -492,13 +502,15 @@ func _handle_message(line: String, c) -> String:
 	if f.size() < 2:
 		return ""
 	var role := f[1]
-	if role != "cyclic" and role != "collective" and role != "pedals":
+	if role != "cyclic" and role != "collective" and role != "pedals" and role != "all":
 		return ""
 	match f[0]:
 		"o":
 			if f.size() < 5:
 				return ""
 			feed(role, float(f[2]), float(f[3]), float(f[4]), float(f[5]) if f.size() >= 6 and f[5] != "" else NAN)
+			if role == "all" and f.size() >= 7 and roles.has("all"):
+				roles["all"]["touch_coll"] = clampf(float(f[6]), 0.0, 1.0)     # on-screen collective slider
 		"c":
 			if roles.has(role):
 				calibrate(role)
@@ -616,6 +628,13 @@ func coll_pedal_deg() -> float:
 		return _wrap180(float(s["roll"]) - float(s["r0"]))
 	return 0.0
 
+## One-phone mode ("all"): turning the phone left/right = pedals, + = right pedal.
+func all_pedal_deg() -> float:
+	if not roles.has("all"):
+		return 0.0
+	var s: Dictionary = roles["all"]
+	return _wrap180(float(s["y0"]) - float(s["yaw"]))
+
 ## True when the collective phone is set to work the pedals and no separate pedal phone is connected.
 func coll_has_pedals() -> bool:
 	return coll_pedals > 0 and roles.has("collective") and not roles.has("pedals") \
@@ -629,7 +648,14 @@ func axes(role: String, dt: float) -> Dictionary:
 	var a := 0.0
 	var b := 0.0
 	var c := 1.0
-	if role == "pedals":
+	if role == "all":
+		# tilt = cyclic (cyclic settings), turn = pedals (collective-phone pedal settings), thumb slider = collective
+		a = _shape_centered(t.x, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lon else 1.0)
+		b = _shape_centered(t.y, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lat else 1.0)
+		var pa := _shape_centered(all_pedal_deg(), coll_ped_range_deg, coll_ped_deadzone_deg, 0.0) * (-1.0 if coll_ped_invert else 1.0)
+		var k0 := 1.0 if s["first"] or smoothing_ms <= 0.0 else clampf(dt / (smoothing_ms / 1000.0), 0.0, 1.0)
+		s["f_p"] = lerpf(float(s.get("f_p", 0.0)), pa if s.get("has_yaw", false) else 0.0, k0)
+	elif role == "pedals":
 		a = _shape_centered(pedal_deg(), ped_range_deg, ped_deadzone_deg, 0.0) * (-1.0 if ped_invert else 1.0)
 	elif role == "cyclic":
 		a = _shape_centered(t.x, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lon else 1.0)
@@ -646,6 +672,8 @@ func axes(role: String, dt: float) -> Dictionary:
 	s["f_a"] = lerpf(float(s["f_a"]), a, k)
 	s["f_b"] = lerpf(float(s["f_b"]), b, k)
 	s["f_c"] = lerpf(float(s["f_c"]), c, k)
+	if role == "all":
+		return {"lon": float(s["f_a"]), "lat": float(s["f_b"]), "ped": float(s["f_p"]), "coll": float(s.get("touch_coll", 0.0)), "thr": 1.0}
 	if role == "pedals":
 		return {"ped": float(s["f_a"])}
 	if role == "cyclic":

@@ -40,6 +40,9 @@
     <button id="r_collective" onclick="pickRole('collective')">Collective<br><span class="dim" style="font-weight:400;font-size:12px">left hand</span></button>
     <button id="r_pedals" onclick="pickRole('pedals')">Pedals<br><span class="dim" style="font-weight:400;font-size:12px">feet</span></button>
   </div>
+  <div class="roles">
+    <button id="r_all" onclick="pickRole('all')">One phone flies everything<br><span class="dim" style="font-weight:400;font-size:12px">tilt = cyclic, turn = pedals, thumb = collective</span></button>
+  </div>
   <div class="card help" id="howto"></div>
   <div class="dim" style="font-size:14px">2. Hold it in the neutral position, then:</div>
   <button class="big" id="startBtn" onclick="start()">Start</button>
@@ -48,7 +51,14 @@
 
 <div id="live" class="hidden">
   <div id="engage">connecting...</div>
-  <canvas id="cv" width="520" height="300"></canvas>
+  <div id="collwrap" style="display:flex;gap:10px;align-items:stretch">
+    <canvas id="cv" width="520" height="300" style="flex:1;min-width:0"></canvas>
+    <div id="collbar" style="display:none;width:84px;margin:8px 0;border-radius:12px;background:#2c353e;position:relative;touch-action:none;overflow:hidden">
+      <div id="collfill" style="position:absolute;left:0;right:0;bottom:0;height:0;background:#f2b53a"></div>
+      <div style="position:absolute;top:6px;width:100%;text-align:center;font-size:12px;color:#e8edf2">UP</div>
+      <div id="collpct" style="position:absolute;bottom:6px;width:100%;text-align:center;font-size:13px;font-weight:700;color:#e8edf2">COLL 0%</div>
+    </div>
+  </div>
   <button class="wide" onclick="calibrate()">Set neutral here</button>
   <div class="card">
     <div class="row"><span class="dim">Link</span><span id="link">-</span></div>
@@ -74,12 +84,30 @@ var HOW = {
     "About 35 degrees = fully up. It stays where you hold it. " +
     "<b>Pedals on this phone</b> (on by default, change in F10 on the PC): <b>turn</b> the phone left/right like steering (front edge to the right = right pedal), or in Tilt mode tip it left/right. " +
     "Press Start with the pedals centred (phone pointing straight ahead). Optional on the PC: rotate the phone about its long axis = throttle twist grip.",
+  all: "<b>One phone:</b> hold the phone in both hands, screen up, like the top of a cyclic. <b>Tilt</b> forward/back/left/right = cyclic. " +
+    "<b>Turn</b> it left/right (front edge to the right = right pedal) = pedals. Your <b>thumb on the slider</b> at the right of the screen = collective: slide up for more, it stays where you leave it. " +
+    "Press Start with the phone level and pointing straight ahead and the slider at the bottom. Throttle stays on R/F on the PC (the governor holds the RPM).",
   pedals: "<b>Pedals:</b> lay the phone <b>flat, screen up</b>, on your pedal bar or foot board, and press Start with your <b>feet level</b> (pedals centred). " +
     "<b>Turn mode</b> (pedal bar on a turntable / lazy susan): right foot forward turns the bar = right pedal (nose right). " +
     "<b>Rock mode</b> (board that tilts left/right): right side down = right pedal. Choose the mode on the PC (F10). " +
     "Turn mode uses the phone's gyro heading, which can drift slowly - tap <b>Set neutral here</b> (or N on the PC) with your feet level if the centre moves."
 };
 var ws = null, usePost = false, connected = false, running = false;
+var touchColl = 0;
+function setColl(clientY) {
+  var r = document.getElementById("collbar").getBoundingClientRect();
+  touchColl = Math.max(0, Math.min(1, (r.bottom - clientY) / r.height));
+  document.getElementById("collfill").style.height = (touchColl * 100) + "%";
+  document.getElementById("collpct").textContent = "COLL " + Math.round(touchColl * 100) + "%";
+  send();
+}
+(function () {
+  var bar = document.getElementById("collbar");
+  function h(e) { e.preventDefault(); var t = e.touches ? e.touches[0] : e; setColl(t.clientY); }
+  bar.addEventListener("touchstart", h, { passive: false });
+  bar.addEventListener("touchmove", h, { passive: false });
+  bar.addEventListener("mousedown", function (e) { h(e); var mv = function (ev) { h(ev); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }); });
+})();
 var alpha = null, pedMode = "turn", collPed = "turn";
 var beta = 0, gamma = 0, have = false, nEv = 0, rate = 0, rateT = performance.now();
 var lastSend = 0, wakeLock = null, engaged = "", simText = "";
@@ -93,10 +121,11 @@ function pickRole(r) {
   document.getElementById("r_cyclic").className = r === "cyclic" ? "sel" : "";
   document.getElementById("r_collective").className = r === "collective" ? "sel" : "";
   document.getElementById("r_pedals").className = r === "pedals" ? "sel" : "";
+  document.getElementById("r_all").className = r === "all" ? "sel" : "";
   document.getElementById("howto").innerHTML = HOW[r];
   document.getElementById("howto2").innerHTML = HOW[r];
 }
-if (role === "cyclic" || role === "collective" || role === "pedals") pickRole(role); else pickRole("cyclic");
+if (role === "cyclic" || role === "collective" || role === "pedals" || role === "all") pickRole(role); else pickRole("cyclic");
 
 if (!window.isSecureContext) {
   var w = document.getElementById("secwarn");
@@ -120,7 +149,7 @@ function onOri(e) {
 }
 
 function line() {
-  return "o," + role + "," + beta.toFixed(2) + "," + gamma.toFixed(2) + "," + screenAngle() + "," + (alpha === null ? "" : alpha.toFixed(2));
+  return "o," + role + "," + beta.toFixed(2) + "," + gamma.toFixed(2) + "," + screenAngle() + "," + (alpha === null ? "" : alpha.toFixed(2)) + (role === "all" ? "," + touchColl.toFixed(3) : "");
 }
 
 function send() {
@@ -221,6 +250,7 @@ async function start() {
   running = true;
   document.getElementById("setup").classList.add("hidden");
   document.getElementById("live").classList.remove("hidden");
+  if (role === "all") document.getElementById("collbar").style.display = "block";
   connectWs();
   setInterval(function () { if (have && performance.now() - lastSend > 50) send(); }, 50);   // heartbeat when the phone is still
   setInterval(function () { if (ws && ws.readyState === 1) ws.send("p," + role + "," + performance.now().toFixed(1)); }, 1000);
@@ -262,7 +292,20 @@ function draw() {
   var now = performance.now();
   if (now - rateT > 1000) { rate = nEv * 1000 / (now - rateT); nEv = 0; rateT = now; }
   var t = have ? tiltNow() : [0, 0];
-  if (role === "cyclic") {
+  if (role === "all") {
+    var R2 = 100, cx2 = W / 2, cy2 = H / 2 - 20;
+    c.strokeStyle = "#2c353e"; c.lineWidth = 2;
+    c.beginPath(); c.arc(cx2, cy2, R2, 0, 7); c.stroke();
+    c.beginPath(); c.moveTo(cx2 - R2, cy2); c.lineTo(cx2 + R2, cy2); c.moveTo(cx2, cy2 - R2); c.lineTo(cx2, cy2 + R2); c.stroke();
+    var x3 = Math.max(-1, Math.min(1, t[1] / 20)), y3 = Math.max(-1, Math.min(1, t[0] / 20));
+    c.fillStyle = "#f2b53a"; c.beginPath(); c.arc(cx2 + x3 * R2, cy2 - y3 * R2, 13, 0, 7); c.fill();
+    var pa = alpha === null ? 0 : -(((alpha - (a0 === null ? (a0 = alpha) : a0) + 540) % 360) - 180);
+    var p3 = Math.max(-1, Math.min(1, pa / 25)), bw3 = W - 80, by3 = H - 18;
+    c.fillStyle = "#2c353e"; c.fillRect(40, by3 - 8, bw3, 16);
+    c.fillStyle = "#f2b53a";
+    if (p3 >= 0) c.fillRect(W / 2, by3 - 8, p3 * bw3 / 2, 16); else c.fillRect(W / 2 + p3 * bw3 / 2, by3 - 8, -p3 * bw3 / 2, 16);
+    c.fillStyle = "#e8edf2"; c.fillRect(W / 2 - 1, by3 - 12, 2, 24); c.font = "14px system-ui"; c.fillText("PEDALS (turn)", 40, by3 - 14); c.fillText("CYCLIC (tilt)", 12, 22);
+  } else if (role === "cyclic") {
     var R = 120, cx = W / 2, cy = H / 2;
     c.strokeStyle = "#2c353e"; c.lineWidth = 2;
     c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();

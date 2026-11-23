@@ -110,7 +110,7 @@ func _rebuild() -> void:
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.add_child(G.label("AB206 REALSIM  ·  SETUP", 12, G.TEXT3))
 	tv.add_child(G.label("Phone controller", 30, G.TEXT))
-	tv.add_child(G.label("Two phones fly everything: cyclic + collective (with pedals). A third phone for the feet is optional.", 13, G.TEXT2))
+	tv.add_child(G.label("One phone can fly everything (One-phone mode), or use two: cyclic + collective with pedals. A pedal phone for the feet is optional.", 13, G.TEXT2))
 	head.add_child(tv)
 	var done := Button.new()
 	done.text = "Done"
@@ -184,12 +184,12 @@ func _rebuild() -> void:
 	status_box = VBoxContainer.new()
 	status_box.add_theme_constant_override("separation", 6)
 	live.add_child(status_box)
-	for r in ["cyclic", "collective", "pedals"]:
+	for r in ["cyclic", "collective", "pedals", "all"]:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		var dot := G.label("●", 16, G.TEXT3)
 		row.add_child(dot)
-		var name := G.label(("Pedal" if r == "pedals" else r.capitalize()) + " phone", 15, G.TEXT)
+		var name := G.label({"cyclic": "Cyclic phone", "collective": "Collective phone", "pedals": "Pedal phone", "all": "One-phone mode"}[r], 15, G.TEXT)
 		name.custom_minimum_size = Vector2(140, 0)
 		row.add_child(name)
 		var info := G.label("", 13, G.TEXT2, true)
@@ -291,6 +291,11 @@ func _process(_dt: float) -> void:
 			var eng: bool = controls.phone_engaged(r)
 			col = G.GOOD if eng else G.WARN
 			var mv := "tilt fwd %+.1f°  right %+.1f°" % [tl.x, tl.y]
+			if r == "all":
+				var sa: Dictionary = phone.roles["all"]
+				mv = "tilt fwd %+.1f° right %+.1f°  ·  turn %+.1f°  ·  collective slider %.0f%%" % [tl.x, tl.y, phone.all_pedal_deg(), 100.0 * float(sa.get("touch_coll", 0.0))]
+				if not sa.get("has_yaw", false):
+					mv += "  ·  no heading: pedals stay on A/D"
 			if r == "collective" and phone.coll_has_pedals():
 				mv += "  ·  pedals %+.1f° %s" % [phone.coll_pedal_deg(), "IN CONTROL" if controls.phone_ped_engaged else ""]
 			elif r == "collective" and phone.coll_pedals == 1 and not s.get("has_yaw", false):
