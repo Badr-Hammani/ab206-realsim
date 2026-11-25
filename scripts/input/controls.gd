@@ -36,6 +36,15 @@ const BTN_ACTIONS := [
 	["sim_speed", "Cycle sim speed (Y)", false],
 	["toggle_hud", "Toggle telemetry (F6)", false],
 	["screenshot", "Screenshot (F12)", false],
+	# M2.30 cockpit systems (engine start / checklists)
+	["starter", "Starter (hold, I)", true],
+	["gov_incr", "Governor RPM INCR (hold, ])", true],
+	["gov_decr", "Governor RPM DECR (hold, [)", true],
+	["caution_test", "Caution lights test (hold)", true],
+	["checklist_ok", "Checklist item checked (Enter)", false],
+	["systems_panel", "Switches + checklists panel (J)", false],
+	["overhead_panel", "Overhead breakers (O)", false],
+	["cold_dark", "Cold and dark reset (Shift+F2)", false],
 ]
 
 var cyclic_lon := 0.0
@@ -43,6 +52,7 @@ var cyclic_lat := 0.0
 var collective := 0.0
 var pedal := 0.0
 var throttle := 1.0
+var open_block := false            # M2.30: the press that rolls the grip out of CLOSED stops at idle (release, press again to open)
 var throttle_rate := 0.6           # R/F twist-grip speed per second (main.gd slows it on the ground, M2.30)
 
 var mouse_cyclic := true
@@ -367,6 +377,10 @@ func _auto_preset_if_empty() -> void:
 		apply_tflight_stick_x_preset(d)
 	elif btn_bindings.is_empty():
 		_apply_tflight_buttons(d)
+	elif not btn_bindings.has("starter") and not _button_is_bound(d, 11):
+		# M2.30: existing T.Flight setups get the starter on the free button 12 (index 11)
+		btn_bindings["starter"] = {"device": d, "button": 11, "dev_name": Input.get_joy_name(d)}
+		save_config()
 
 func _apply_tflight_buttons(dev: int) -> void:
 	var nm := Input.get_joy_name(dev)
@@ -382,6 +396,7 @@ func _apply_tflight_buttons(dev: int) -> void:
 		"toggle_map":       {"device": dev, "button": 8,  "dev_name": nm},
 		"reset_hover":      {"device": dev, "button": 9,  "dev_name": nm},
 		"reset_pad":        {"device": dev, "button": 10, "dev_name": nm},
+		"starter":          {"device": dev, "button": 11, "dev_name": nm},
 	}
 
 ## Applies a complete default mapping for the Thrustmaster T.Flight Stick X:
@@ -454,7 +469,10 @@ func update(dt: float) -> void:
 		collective = clampf(collective, 0.0, 1.0)
 	# throttle twist grip
 	if not _joy_bound("throttle") and not phone_thr_engaged:
-		if Input.is_action_pressed("throttle_open") or joy_button_held("throttle_open"):
+		var opening: bool = Input.is_action_pressed("throttle_open") or joy_button_held("throttle_open")
+		if not opening:
+			open_block = false
+		if opening and not open_block:
 			throttle += throttle_rate * dt
 		if Input.is_action_pressed("throttle_close") or joy_button_held("throttle_close"):
 			throttle -= throttle_rate * dt
@@ -527,7 +545,9 @@ func _combine() -> void:
 				"pedal":
 					pedal = clampf(pedal_trim + (0.0 if _trim_wait_t > 0.0 else v), -1.0, 1.0)
 				"throttle":
-					throttle = v
+					# M2.30: small detents at both ends so a throttle lever / twist axis reaches the
+					# idle stop and full open exactly (checklist items test idle and full)
+					throttle = 0.0 if v < 0.04 else (1.0 if v > 0.96 else v)
 	if phone_cyc_engaged:
 		stick_mouse = _phone_cyc_out()
 		cyclic_lat = clampf(stick_mouse.x + key_offset.x, -1.0, 1.0)

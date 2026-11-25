@@ -19,7 +19,7 @@ const DEFAULT_PITCH := -16.0
 const COCKPIT_FOV := 72.0
 ## Instrument panel face in the helicopter body frame (must match heli_model.gd).
 const PANEL_CENTER := Vector3(0.0, 0.0, -1.965)
-const PANEL_SIZE := Vector2(1.05, 0.44)
+const PANEL_SIZE := Vector2(0.92, 0.57)   # M2.30b: real 206B-3 panel proportions
 const PANEL_TILT_DEG := -18.0
 var look_pitch := DEFAULT_PITCH
 const FOCUS_FOV := 40.0

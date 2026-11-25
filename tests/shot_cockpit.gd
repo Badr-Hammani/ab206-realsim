@@ -1,6 +1,12 @@
 extends SceneTree
-## Pictures of the M2.30 cockpit panels (needs a display): the instrument panel alone and the
-## overhead circuit-breaker console. Run: godot --path . --script res://tests/shot_cockpit.gd -- --out=/tmp/shots
+## Pictures of the M2.30 cockpit (needs a display): the 3D cockpit view, the instrument panel alone,
+## the overhead console looked at from the seat and the O breaker panel.
+## Run: godot --path . --script res://tests/shot_cockpit.gd -- --out=/tmp/shots
+func _snap(path: String) -> void:
+	for i in 8:
+		await process_frame
+	root.get_viewport().get_texture().get_image().save_png(path)
+
 func _initialize() -> void:
 	var out := "/tmp/shots"
 	for a in OS.get_cmdline_user_args():
@@ -10,33 +16,34 @@ func _initialize() -> void:
 	var main = load("res://scenes/main.tscn").instantiate()
 	main.map_override = "valle"
 	root.add_child(main)
-	for i in 20:
-		await process_frame
-	main.reset_cold_dark(true)
-	main.systems.battery = true
-	main.systems.pull_breaker("IGN ENG")
 	for i in 30:
 		await process_frame
-	main.overhead.open()
-	main._set_paused(false)
-	for i in 10:
-		await process_frame
-	root.get_viewport().get_texture().get_image().save_png(out + "/overhead.png")
-	main.overhead.close()
 	main.reset_on_pad()
+	main.hud.visible = false
 	for i in 60:
 		await process_frame
+	await _snap(out + "/cockpit.png")
+	main.systems.caution_test = true
+	await _snap(out + "/cockpit_test.png")
+	main.systems.caution_test = false
+	main.systems.pull_breaker("IGN ENG")
+	main.cam_rig.look_pitch = 60.0
+	await _snap(out + "/overhead3d.png")
+	main.cam_rig.look_pitch = main.cam_rig.DEFAULT_PITCH
+	main.overhead.open()
+	await _snap(out + "/overhead.png")
+	main.overhead.close()
 	var cl := CanvasLayer.new()
 	cl.layer = 50
 	root.add_child(cl)
 	var bg := ColorRect.new()
 	bg.color = Color(0, 0, 0)
-	bg.size = Vector2(1100, 500)
+	bg.size = Vector2(1100, 700)
 	cl.add_child(bg)
 	var p = load("res://scripts/ui/instrument_panel.gd").new()
 	p.position = Vector2(20, 20)
 	cl.add_child(p)
-	for i in 30:
+	for i in 20:
 		p.v = main.panel3d.v
 		await process_frame
 	root.get_viewport().get_texture().get_image().save_png(out + "/panel.png")

@@ -67,6 +67,12 @@ from your AB206 manual, limits). **I** (hold) = starter, hold **F** at idle = th
 **O** = overhead console: click a circuit breaker to pull it out / push it in (the FUEL BOOST
 breakers are out after cold and dark, like after the preflight fuel sample: push them in at the
 prestart check). The instrument panel now follows the layout of a real 206B-3 panel.
+HOTAS / joystick (F8 > buttons): new assignable buttons Starter (hold), Governor INCR / DECR (hold),
+Caution test (hold), Checklist item checked, Switches panel (J), Overhead (O), Cold and dark. On the
+T.Flight Stick X the starter goes on button 12 automatically if it is free. Throttle by buttons:
+hold "throttle close" at idle for half a second = CLOSED; "throttle open" from CLOSED stops at the
+idle stop (release and press again to open). Throttle lever/axis: bring it to idle first, then
+pushing it up from idle opens the grip out of CLOSED; both ends of the axis snap to idle / full.
 New lessons **S1 Engine start** and **S2 Engine shutdown**. Details: docs/CHECKLISTS.md.
 
 ## Your first hover (simulation exercise)

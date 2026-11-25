@@ -31,6 +31,7 @@ const Systems = preload("res://scripts/aircraft/engine_systems.gd")
 const Checklist = preload("res://scripts/core/checklist.gd")
 const SystemsPanel = preload("res://scripts/ui/systems_panel.gd")
 const OverheadPanel = preload("res://scripts/ui/overhead_panel.gd")
+const OverheadFace = preload("res://scripts/ui/overhead_face.gd")
 
 const SETTINGS_PATH := "user://settings.cfg"
 const SUBSTEPS := 2
@@ -82,6 +83,7 @@ var systems                       # engine_systems.gd: switches, start, TOT, cau
 var checklist                     # checklist.gd: the flight-manual checklists
 var sys_panel                     # J: cockpit systems + checklist panel
 var overhead                      # O: overhead console, circuit breakers (M2.30)
+var overhead_vp: SubViewport      # texture of the 3D overhead console
 var landing_light: SpotLight3D
 var _starter_by_key := false
 var _close_hold := 0.0            # F held at the idle stop = idle release
@@ -106,7 +108,7 @@ func _ready() -> void:
 
 	# instrument panel rendered to a texture for the 3D cockpit
 	panel_vp = SubViewport.new()
-	panel_vp.size = Vector2i(1000, 420)
+	panel_vp.size = Vector2i(1000, 620)
 	panel_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	panel_vp.transparent_bg = false
 	add_child(panel_vp)
@@ -212,6 +214,19 @@ func _ready() -> void:
 	sys_panel.ui_theme = menu._theme
 	add_child(sys_panel)
 	sys_panel.closed.connect(func() -> void: _set_paused(paused))
+	# 3D overhead console face: the same breaker drawing, rendered to a texture (re-rendered only
+	# when a breaker changes)
+	overhead_vp = SubViewport.new()
+	overhead_vp.size = Vector2i(380, 720)
+	overhead_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(overhead_vp)
+	var oface = OverheadFace.new()
+	oface.systems = systems
+	oface.cols = 3
+	oface.size = Vector2(380, 720)
+	overhead_vp.add_child(oface)
+	oface.redrawn.connect(func() -> void: overhead_vp.render_target_update_mode = SubViewport.UPDATE_ONCE)
+	heli.set_overhead_texture(overhead_vp.get_texture())
 	overhead = OverheadPanel.new()
 	overhead.systems = systems
 	add_child(overhead)
@@ -305,6 +320,7 @@ func reset_cold_dark(quiet := false) -> void:
 	controls.set_from_trim(0.0, 0.0, 0.0, 0.0, 0.0)
 	controls.throttle = 0.0
 	_fric = {"coll": 0.0, "thr": 0.0}
+	_thr_axis_was_low = false          # a throttle lever must come back to idle before it can open
 	checklist.start_list("prestart")
 	if not quiet:
 		instructor.force("COLD AND DARK on the pad: engine stopped, every switch OFF, throttle CLOSED, frictions ON. Press J for the cockpit switches and the flight-manual checklist (prestart, start, run-up). I = starter (hold), F/R = throttle, [ ] = governor RPM, Enter = item checked.")
@@ -334,6 +350,8 @@ func set_throttle_closed(on: bool) -> void:
 		return
 	systems.throttle_closed = on
 	controls.throttle = 0.0
+	if not on:
+		controls.open_block = true      # stop at idle; release and press again to open further
 	if on:
 		instructor.force("THROTTLE CLOSED (idle release pressed): fuel cut off." + (" The engine stops." if fdm.lit else ""), "Throttle closed.")
 	else:
@@ -734,6 +752,20 @@ func _on_joy_action(act: String) -> void:
 			hud.show_telemetry = not hud.show_telemetry
 		"screenshot":
 			take_screenshot("")
+		"checklist_ok":
+			if checklist.active() and not checklist.finished():
+				checklist.confirm()
+		"systems_panel":
+			if sys_panel.visible:
+				sys_panel.close()
+			else:
+				sys_panel.open()
+				_set_paused(paused)
+		"overhead_panel":
+			overhead.toggle()
+			_set_paused(paused)
+		"cold_dark":
+			reset_cold_dark(false)
 
 ## F12: saves a PNG to the user data folder (shown on screen). Also used by --autoshot test mode.
 func take_screenshot(path: String) -> String:
@@ -931,20 +963,43 @@ func _physics_process(delta: float) -> void:
 	coach.update(delta, fdm, controls.cyclic_lon, controls.cyclic_lat, controls.collective, controls.pedal)
 	instructor.update(fdm, delta)
 
-## Starter, idle release, frictions and governor beep (keys and the J panel).
+var _ct_by_joy := false
+var _thr_axis_was_low := false
+
+## Starter, idle release, frictions and governor beep (keys, HOTAS buttons and the J panel).
 func _cockpit_inputs(delta: float) -> void:
 	var free_cam: bool = cam_rig.mode == cam_rig.Mode.FREE
-	var starter_key := Input.is_physical_key_pressed(KEY_I) and not free_cam
+	var starter_key: bool = (Input.is_physical_key_pressed(KEY_I) and not free_cam) or controls.joy_button_held("starter")
 	if starter_key:
 		systems.starter_btn = true
 		_starter_by_key = true
 	elif _starter_by_key:
 		systems.starter_btn = false        # key released (the J panel button works on its own)
 		_starter_by_key = false
-	if Input.is_physical_key_pressed(KEY_BRACKETLEFT):
+	if Input.is_physical_key_pressed(KEY_BRACKETLEFT) or controls.joy_button_held("gov_decr"):
 		beep_gov(-1.0, delta)
-	if Input.is_physical_key_pressed(KEY_BRACKETRIGHT):
+	if Input.is_physical_key_pressed(KEY_BRACKETRIGHT) or controls.joy_button_held("gov_incr"):
 		beep_gov(1.0, delta)
+	var ct_btn: bool = controls.joy_button_held("caution_test")
+	if ct_btn:
+		systems.caution_test = true
+		_ct_by_joy = true
+	elif _ct_by_joy:
+		systems.caution_test = false
+		_ct_by_joy = false
+	# out of CLOSED back to idle: R / throttle-open button, or a throttle axis pushed up from its stop
+	# (the axis must first be brought to its idle stop, so a lever left open after a reset does not
+	# put fuel in on its own - that would be a hot start)
+	var thr_axis: bool = controls._joy_bound("throttle")
+	var axis_v: float = controls.joy_value("throttle") if thr_axis else 0.0
+	if systems.throttle_closed:
+		var axis_up: bool = thr_axis and axis_v > 0.06 and _thr_axis_was_low
+		if controls.joy_button_held("throttle_open") or axis_up:
+			set_throttle_closed(false)
+	if not thr_axis or axis_v <= 0.04:
+		_thr_axis_was_low = true
+	elif not systems.throttle_closed:
+		_thr_axis_was_low = false
 	# idle release: keep F held at the idle stop for half a second to roll the throttle to CLOSED
 	var closing: bool = Input.is_action_pressed("throttle_close") or controls.joy_button_held("throttle_close")
 	if closing and controls.throttle <= 0.001 and not systems.throttle_closed:
@@ -1018,7 +1073,7 @@ func _process(delta: float) -> void:
 		"low_rpm": systems.cautions["ROTOR LOW RPM"],
 		"tot": systems.tot, "cautions": systems.cautions, "eng_oil": systems.eng_oil_psi,
 		"trans_oil": systems.xmsn_oil_psi, "fuel_lb": systems.fuel_lb if systems.bus_powered and systems.cb_in("FUEL QTY") else 0.0, "fuel_psi": systems.fuel_psi,
-		"eng_oil_c": systems.eng_oil_c, "trans_oil_c": systems.xmsn_oil_c, "amps": systems.gen_amps, "oat": systems.oat_c,
+		"eng_oil_c": systems.eng_oil_c, "trans_oil_c": systems.xmsn_oil_c, "amps": systems.gen_amps, "oat": systems.oat_c, "ctest": systems.caution_test and systems.bus_powered and systems.cb_in("CAUTION LT"),
 	}
 	if phone.running:
 		_phone_feedback(delta, vals)

@@ -3,7 +3,7 @@ extends Control
 ## Every needle is driven by the simulation each frame (see main.gd -> panel.v).
 ## Markings come from the aircraft data file (verified/derived values where available).
 
-const PANEL_SIZE := Vector2(1000, 420)
+const PANEL_SIZE := Vector2(1000, 620)   # M2.30b: proportions of the real 206B-3 panel (photo)
 const R := 86.0
 
 var v := {
@@ -61,48 +61,116 @@ func _readout(c: Vector2, text: String, y := 26.0) -> void:
 	draw_rect(box, Color(0.4, 0.4, 0.4), false, 1.0)
 	draw_string(font, box.position + Vector2(0, 14), text, HORIZONTAL_ALIGNMENT_CENTER, 60, 13, Color(0.6, 1.0, 0.6))
 
-## Layout after the student's photo of a real Bell 206B-3 panel (M2.30): caution/warning strip across
-## the top; two left columns of small engine gauges; centre-left airspeed over the dual tach; centre
-## attitude over the heading indicator; right altimeter over the VSI; small gauges far right.
-const RS := 40.0                 # small engine gauges
+## Layout copied from the student's photo of a real Bell 206B-3 panel (M2.30b). The photo's
+## grid, measured and scaled to this 1000 x 620 face: a caution/warning strip in the shadow of the
+## glareshield across the top; columns A and B = small engine gauges (4 rows); column C = airspeed,
+## dual tach, blank (white cover); column D = attitude, heading, clock; column E = altimeter,
+## VSI, OAT, with the red handle low on the right. Light grey face, black bezels with mounting
+## screws, small knobs and placards like the photo.
+const RS := 40.0                 # small gauges are drawn at this radius and scaled
+const STRIP_H := 58.0
+const FACE := Color(0.60, 0.63, 0.66)
+const FACE_DK := Color(0.50, 0.53, 0.56)
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, PANEL_SIZE), Color(0.10, 0.10, 0.11))
-	# panel face (light grey like the photo) with a darker glare-shield lip
-	draw_rect(Rect2(Vector2(4, 40), PANEL_SIZE - Vector2(8, 44)), Color(0.33, 0.34, 0.36))
-	draw_rect(Rect2(Vector2.ZERO, Vector2(PANEL_SIZE.x, 40)), Color(0.07, 0.07, 0.08))
+	# glareshield shadow band with the caution panel
+	draw_rect(Rect2(Vector2.ZERO, PANEL_SIZE), Color(0.05, 0.05, 0.055))
+	# the panel face, light blue-grey, slightly darker towards the bottom
+	var face := Rect2(Vector2(6, STRIP_H), Vector2(PANEL_SIZE.x - 12, PANEL_SIZE.y - STRIP_H - 6))
+	draw_rect(face, FACE)
+	draw_rect(Rect2(face.position + Vector2(0, face.size.y * 0.55), Vector2(face.size.x, face.size.y * 0.45)), Color(FACE_DK, 0.35))
+	draw_rect(Rect2(face.position, Vector2(face.size.x, 10)), Color(0, 0, 0, 0.35))   # shadow under the hood
+	for sp in [Vector2(20, 76), Vector2(980, 76), Vector2(20, 600), Vector2(980, 600), Vector2(500, 76), Vector2(500, 600)]:
+		_screw(sp, 4.0)
 	_caution_strip()
-	# left column 1 / column 2: small engine gauges (4 each)
-	var c1 := 62.0
-	var c2 := 160.0
-	var ys := [92.0, 184.0, 276.0, 368.0]
-	_small(Vector2(c1, ys[0]), "TORQUE %", float(v["tq"]), 0, 120, [[0, limits["tq_mcp"], 0], [limits["tq_mcp"], limits["tq_max"], 1], [limits["tq_max"], limits["tq_max"] + 1.5, 2]], 20, "%3.0f")
-	_small(Vector2(c1, ys[1]), "TOT C x100", float(v.get("tot", 0.0)), 0, 1000, [[300, 738, 0], [738, 810, 1], [810, 816, 2], [921, 927, 2]], 200, "%4.0f", 0.01)
-	_small(Vector2(c1, ys[2]), "GAS PROD N1 %", float(v["n1"]), 0, 110, [[60, limits["n1_max"], 0], [limits["n1_max"], limits["n1_max"] + 1.0, 2]], 20, "%5.1f")
-	_small(Vector2(c1, ys[3]), "FUEL LB x100", float(v.get("fuel_lb", 0.0)), 0, 700, [[0, 134, 1]], 100, "%3.0f", 0.01)
-	_dual_small(Vector2(c2, ys[0]), "ENG OIL", float(v.get("eng_oil", 0.0)), 0, 150, [[50, 115, 1], [115, 130, 0], [130, 131.5, 2], [49, 50, 2]], float(v.get("eng_oil_c", 0.0)), 0, 150, [[0, 107, 0], [107, 109, 2]])
-	_dual_small(Vector2(c2, ys[1]), "XMSN OIL", float(v.get("trans_oil", 0.0)), 0, 100, [[30, 50, 0], [50, 70, 1], [70, 71.5, 2], [29, 30, 2]], float(v.get("trans_oil_c", 0.0)), 0, 150, [[15, 110, 0], [110, 112, 2]])
-	_small(Vector2(c2, ys[2]), "FUEL PRESS PSI", float(v.get("fuel_psi", 0.0)), 0, 30, [[4, 30, 0], [3.6, 4.0, 2]], 10, "%2.0f")
-	_small(Vector2(c2, ys[3]), "AMPS", float(v.get("amps", 0.0)), 0, 150, [[0, 105, 0], [105, 150, 1]], 50, "%3.0f")
-	# flight instruments
-	_asi(Vector2(318, 132))
-	_tach(Vector2(318, 326))
-	_attitude(Vector2(530, 132))
-	_hdg(Vector2(530, 326))
-	_alt(Vector2(742, 132))
-	_vsi(Vector2(742, 326))
-	# far right: OAT and the label plate
-	_small(Vector2(924, 118), "OAT C", float(v.get("oat", 15.0)), -40, 50, [], 20, "%3.0f")
-	draw_rect(Rect2(Vector2(872, 196), Vector2(104, 54)), Color(0.12, 0.12, 0.12))
-	draw_string(font, Vector2(872, 216), "BELL 206B-3", HORIZONTAL_ALIGNMENT_CENTER, 104, 12, Color(0.85, 0.85, 0.85))
-	draw_string(font, Vector2(872, 236), "SIMULATION", HORIZONTAL_ALIGNMENT_CENTER, 104, 10, Color(0.6, 0.6, 0.6))
-	# NR horn test / ROTOR LOW RPM readout under the plate
-	draw_string(font, Vector2(872, 290), "N1 %5.1f" % float(v["n1"]), HORIZONTAL_ALIGNMENT_CENTER, 104, 12, Color(0.6, 1.0, 0.6))
-	draw_string(font, Vector2(872, 310), "TQ %4.0f" % float(v["tq"]), HORIZONTAL_ALIGNMENT_CENTER, 104, 12, Color(0.6, 1.0, 0.6))
-	draw_string(font, Vector2(872, 330), "TOT %4.0f" % float(v.get("tot", 0.0)), HORIZONTAL_ALIGNMENT_CENTER, 104, 12, Color(1.0, 0.5, 0.4) if float(v.get("tot", 0.0)) > 810.0 else Color(0.6, 1.0, 0.6))
+	# --- columns A and B: small engine gauges
+	var A := 171.0
+	var B := 323.0
+	var rows := [150.0, 282.0, 410.0, 532.0]
+	var sm := 1.35                # small gauge scale (radius 54)
+	for c in [Vector2(A, rows[0]), Vector2(A, rows[1]), Vector2(A, rows[2]), Vector2(A, rows[3]), Vector2(B, rows[0]), Vector2(B, rows[1]), Vector2(B, rows[2]), Vector2(B, rows[3])]:
+		_mount(c, 56.0)
+	_at(Vector2(A, rows[0]), sm, func() -> void: _small(Vector2.ZERO, "TORQUE %", float(v["tq"]), 0, 120, [[0, limits["tq_mcp"], 0], [limits["tq_mcp"], limits["tq_max"], 1], [limits["tq_max"], limits["tq_max"] + 1.5, 2]], 20, "%3.0f"))
+	_at(Vector2(A, rows[1]), sm, func() -> void: _small(Vector2.ZERO, "TOT  C x100", float(v.get("tot", 0.0)), 0, 1000, [[300, 738, 0], [738, 810, 1], [810, 816, 2], [921, 927, 2]], 200, "%4.0f", 0.01))
+	_at(Vector2(A, rows[2]), sm, func() -> void: _small(Vector2.ZERO, "GAS PROD %", float(v["n1"]), 0, 110, [[60, limits["n1_max"], 0], [limits["n1_max"], limits["n1_max"] + 1.0, 2]], 20, "%5.1f"))
+	_at(Vector2(A, rows[3]), sm, func() -> void: _small(Vector2.ZERO, "FUEL  LB x100", float(v.get("fuel_lb", 0.0)), 0, 700, [[0, 134, 1]], 100, "%3.0f", 0.01))
+	_at(Vector2(B, rows[0]), sm, func() -> void: _dual_small(Vector2.ZERO, "ENG OIL", float(v.get("eng_oil", 0.0)), 0, 150, [[50, 115, 1], [115, 130, 0], [130, 131.5, 2], [49, 50, 2]], float(v.get("eng_oil_c", 0.0)), 0, 150, [[0, 107, 0], [107, 109, 2]]))
+	_at(Vector2(B, rows[1]), sm, func() -> void: _dual_small(Vector2.ZERO, "XMSN OIL", float(v.get("trans_oil", 0.0)), 0, 100, [[30, 50, 0], [50, 70, 1], [70, 71.5, 2], [29, 30, 2]], float(v.get("trans_oil_c", 0.0)), 0, 150, [[15, 110, 0], [110, 112, 2]]))
+	_at(Vector2(B, rows[2]), sm, func() -> void: _small(Vector2.ZERO, "FUEL PRESS", float(v.get("fuel_psi", 0.0)), 0, 30, [[4, 30, 0], [3.6, 4.0, 2]], 10, "%2.0f"))
+	_at(Vector2(B, rows[3]), sm, func() -> void: _small(Vector2.ZERO, "AMPS", float(v.get("amps", 0.0)), 0, 150, [[0, 105, 0], [105, 150, 1]], 50, "%3.0f"))
+	# --- columns C, D, E: flight instruments (big ones are R = 86 drawn, scaled)
+	var C := 498.0
+	var D := 695.0
+	var E := 889.0
+	_mount(Vector2(C, 176), 80.0)
+	_at(Vector2(C, 176), 0.86, func() -> void: _asi(Vector2.ZERO))
+	_mount(Vector2(C, 340), 80.0)
+	_at(Vector2(C, 340), 0.86, func() -> void: _tach(Vector2.ZERO))
+	_blank(Vector2(C, 500), 62.0)
+	_mount(Vector2(D, 166), 82.0)
+	_at(Vector2(D, 166), 0.88, func() -> void: _attitude(Vector2.ZERO))
+	_mount(Vector2(D, 334), 80.0)
+	_at(Vector2(D, 334), 0.86, func() -> void: _hdg(Vector2.ZERO))
+	_mount(Vector2(D, 500), 64.0)
+	_clock(Vector2(D, 500), 56.0)
+	_mount(Vector2(E, 160), 78.0)
+	_at(Vector2(E, 160), 0.84, func() -> void: _alt(Vector2.ZERO))
+	_mount(Vector2(E, 316), 62.0)
+	_at(Vector2(E, 316), 0.64, func() -> void: _vsi(Vector2.ZERO))
+	_mount(Vector2(E, 450), 58.0)
+	_at(Vector2(E, 450), 1.25, func() -> void: _small(Vector2.ZERO, "OAT  C", float(v.get("oat", 15.0)), -40, 50, [], 20, "%3.0f"))
+	# small knobs and switches dotted on the face like the photo
+	for k in [Vector2(258, 214), Vector2(258, 470), Vector2(410, 96), Vector2(598, 96), Vector2(598, 420), Vector2(790, 96), Vector2(790, 246), Vector2(410, 590)]:
+		draw_circle(k, 9.0, Color(0.08, 0.08, 0.08))
+		draw_circle(k + Vector2(-2, -2), 3.0, Color(0.3, 0.3, 0.3))
+	# red handle low on the right (photo) and placards
+	draw_rect(Rect2(Vector2(842, 528), Vector2(26, 64)), Color(0.7, 0.07, 0.05))
+	draw_rect(Rect2(Vector2(838, 520), Vector2(34, 12)), Color(0.45, 0.05, 0.04))
+	draw_string(font, Vector2(600, 586), "MINIMUM CREW: ONE PILOT  -  OBSERVE LIMITATIONS IN FLIGHT MANUAL", HORIZONTAL_ALIGNMENT_LEFT, 230, 8, Color(0.15, 0.15, 0.15))
+	draw_string(font, Vector2(600, 598), "THIS HELICOPTER MUST BE OPERATED IN COMPLIANCE WITH BHT-206B3-FM-1", HORIZONTAL_ALIGNMENT_LEFT, 230, 7, Color(0.15, 0.15, 0.15))
+
+## Draws f() with its origin at c and scale k (gauges are written around Vector2.ZERO).
+func _at(c: Vector2, k: float, f: Callable) -> void:
+	draw_set_transform(c, 0.0, Vector2(k, k))
+	f.call()
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _screw(p: Vector2, r: float) -> void:
+	draw_circle(p, r + 1.0, Color(0.25, 0.25, 0.27))
+	draw_circle(p, r, Color(0.72, 0.72, 0.74))
+	draw_line(p - Vector2(r * 0.7, -r * 0.3), p + Vector2(r * 0.7, -r * 0.3), Color(0.3, 0.3, 0.32), 1.2)
+
+## Round instrument mounting: black flange with 4 screws on the diagonals, like the photo.
+func _mount(c: Vector2, r: float) -> void:
+	draw_circle(c + Vector2(2, 3), r + 3.0, Color(0, 0, 0, 0.25))
+	draw_circle(c, r + 2.0, Color(0.1, 0.1, 0.11))
+	for a in [45.0, 135.0, 225.0, 315.0]:
+		var d := Vector2(cos(deg_to_rad(a)), sin(deg_to_rad(a)))
+		_screw(c + d * (r + 9.0), 3.0)
+
+## White blank cover (the empty instrument hole in the photo).
+func _blank(c: Vector2, r: float) -> void:
+	_mount(c, r)
+	draw_circle(c, r, Color(0.93, 0.93, 0.91))
+	draw_arc(c, r - 2.0, 0.0, TAU, 40, Color(0.75, 0.75, 0.73), 2.0)
+
+func _clock(c: Vector2, r: float) -> void:
+	draw_circle(c, r, Color(0.04, 0.04, 0.05))
+	for i in 12:
+		var a := deg_to_rad(i * 30.0 - 90.0)
+		var d := Vector2(cos(a), sin(a))
+		draw_line(c + d * (r - 9), c + d * (r - 2), Color.WHITE, 2.0)
+		draw_string(font, c + d * (r - 19) + Vector2(-8, 4), str(12 if i == 0 else i), HORIZONTAL_ALIGNMENT_CENTER, 16, 10, Color.WHITE)
+	var t := Time.get_time_dict_from_system()
+	var hm: float = float(t["hour"] % 12) + float(t["minute"]) / 60.0
+	var mm: float = float(t["minute"]) + float(t["second"]) / 60.0
+	for hand in [[hm / 12.0, r * 0.5, 4.0], [mm / 60.0, r * 0.78, 2.5], [float(t["second"]) / 60.0, r * 0.85, 1.0]]:
+		var a2 := deg_to_rad(hand[0] * 360.0 - 90.0)
+		draw_line(c, c + Vector2(cos(a2), sin(a2)) * hand[1], Color.WHITE if hand[2] > 1.0 else Color(1, 0.6, 0.1), hand[2], true)
+	draw_circle(c, 3.0, Color(0.3, 0.3, 0.3))
+	draw_string(font, c + Vector2(-r, r * 0.55), "CLOCK", HORIZONTAL_ALIGNMENT_CENTER, r * 2, 8, Color(0.8, 0.8, 0.8))
 
 const ARC_COL := [Color(0.1, 0.75, 0.2), Color(0.95, 0.85, 0.1), Color(0.95, 0.1, 0.1)]
-
 ## Small round engine gauge (like the two left columns in the photo).
 func _small(c: Vector2, title: String, val: float, vmin: float, vmax: float, arcs: Array, label_step: float, fmt: String, lscale := 1.0) -> void:
 	var r := RS
@@ -155,26 +223,44 @@ func _dual_small(c: Vector2, title: String, p: float, pmin: float, pmax: float, 
 	draw_rect(box, Color(0, 0, 0))
 	draw_string(font, box.position + Vector2(0, 11), "%3.0f  %3.0f" % [p, tc], HORIZONTAL_ALIGNMENT_CENTER, 60, 10, Color(0.6, 1.0, 0.6))
 
-## Caution / warning light strip across the top of the panel (as in the photo). Light names from
-## the Bell 206B-3 flight manual (Section 3). Red ones blink.
+## Caution / warning panel across the top, in the glareshield shadow (photo). Light names from the
+## Bell 206B-3 flight manual. Lights the sim drives: ENG OUT, ROTOR LOW RPM, TOT, XMSN OIL PRESS,
+## GEN FAIL, FUEL PUMP, HYD PRESS, FUEL LOW. ENG CHIP, XMSN CHIP, T/R CHIP, A/F FUEL FILTER and
+## XMSN OIL TEMP exist on the real panel and light on the press-to-test, but no failure drives
+## them yet. Red ones blink.
 func _caution_strip() -> void:
 	var caut: Dictionary = v.get("cautions", {})
-	var names := ["ENG OUT", "ROTOR LOW RPM", "TOT", "TRANS OIL PRESS", "GEN FAIL", "FUEL PUMP", "HYD PRESS", "FUEL LOW"]
-	var short := {"ENG OUT": "ENG OUT", "ROTOR LOW RPM": "RTR LOW RPM", "TRANS OIL PRESS": "XMSN OIL PRESS", "GEN FAIL": "GEN FAIL", "FUEL PUMP": "FUEL PUMP", "HYD PRESS": "HYD PRESS", "FUEL LOW": "FUEL LOW", "TOT": "TOT"}
-	var w := 92.0
-	var x0 := (PANEL_SIZE.x - names.size() * (w + 4.0)) * 0.5
-	for i in names.size():
-		var n: String = names[i]
-		var lit: bool = bool(caut.get(n, v["low_rpm"] if n == "ROTOR LOW RPM" else false))
-		var red: bool = n in ["ENG OUT", "ROTOR LOW RPM", "TOT"]
+	var test: bool = bool(v.get("ctest", false))
+	var lamps := [["ENG OUT", "ENG\nOUT", true], ["ROTOR LOW RPM", "ROTOR\nLOW RPM", true], ["TOT", "TOT", true],
+		["TRANS OIL PRESS", "XMSN OIL\nPRESS", false], ["XMSN OIL TEMP", "XMSN OIL\nTEMP", false], ["GEN FAIL", "GEN\nFAIL", false],
+		["FUEL PUMP", "FUEL\nPUMP", false], ["FUEL LOW", "FUEL\nLOW", false], ["A/F FUEL FILTER", "A/F FUEL\nFILTER", false],
+		["HYD PRESS", "HYD\nPRESS", false], ["ENG CHIP", "ENG\nCHIP", false], ["XMSN CHIP", "XMSN\nCHIP", false], ["T/R CHIP", "T/R\nCHIP", false]]
+	var w := 66.0
+	var gap := 4.0
+	var x0 := 40.0
+	draw_rect(Rect2(Vector2(x0 - 6, 6), Vector2(lamps.size() * (w + gap) + 8, 46)), Color(0.14, 0.14, 0.15))
+	for i in lamps.size():
+		var n: String = lamps[i][0]
+		var red: bool = lamps[i][2]
+		var lit: bool = bool(caut.get(n, test if not caut.has(n) else false))
+		if n == "ROTOR LOW RPM" and not caut.has(n):
+			lit = bool(v["low_rpm"])
 		if lit and red and blink >= 0.6:
 			lit = false
-		var r := Rect2(Vector2(x0 + i * (w + 4.0), 7.0), Vector2(w, 26))
-		var on_col := Color(0.9, 0.1, 0.05) if red else Color(0.98, 0.7, 0.08)
-		var off_col := Color(0.2, 0.07, 0.06) if red else Color(0.19, 0.15, 0.07)
-		draw_rect(r, on_col if lit else off_col)
-		draw_rect(r, Color(0.45, 0.45, 0.45), false, 1.0)
-		draw_string(font, r.position + Vector2(0, 17), short[n], HORIZONTAL_ALIGNMENT_CENTER, w, 10, Color(1, 1, 1) if lit else Color(0.5, 0.4, 0.33))
+		var r := Rect2(Vector2(x0 + i * (w + gap), 10), Vector2(w, 38))
+		var on_col := Color(1.0, 0.16, 0.08) if red else Color(1.0, 0.74, 0.1)
+		draw_rect(r, on_col if lit else Color(0.09, 0.09, 0.1))
+		draw_rect(r, Color(0.32, 0.32, 0.34), false, 1.0)
+		var lines: PackedStringArray = str(lamps[i][1]).split("\n")
+		for j in lines.size():
+			var yy := r.position.y + (22.0 if lines.size() == 1 else 16.0 + j * 13.0)
+			var col := Color(0.15, 0.05, 0.0) if lit else (Color(0.75, 0.35, 0.3) if red else Color(0.72, 0.66, 0.5))
+			draw_string(font, Vector2(r.position.x, yy), lines[j], HORIZONTAL_ALIGNMENT_CENTER, w, 11, col)
+	# master caution / RPM warning lights at the right end (photo: a small unit right of the strip)
+	var mx := x0 + lamps.size() * (w + gap) + 14.0
+	draw_rect(Rect2(Vector2(mx, 10), Vector2(990 - mx - 6, 38)), Color(0.12, 0.12, 0.13))
+	draw_circle(Vector2(mx + (990 - mx - 6) * 0.5, 29), 7.0, Color(0.55, 0.55, 0.57))
+	draw_circle(Vector2(mx + (990 - mx - 6) * 0.5, 29), 5.0, Color(0.08, 0.08, 0.08))
 
 func _torque(c: Vector2) -> void:
 	_face(c, "TORQUE %")

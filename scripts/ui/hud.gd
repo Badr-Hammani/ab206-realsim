@@ -169,8 +169,8 @@ func build(panel_scene_script: Script) -> void:
 	panel2d = Control.new()
 	panel2d.set_script(panel_scene_script)
 	panel_holder.add_child(panel2d)
-	panel2d.scale = Vector2(0.62, 0.62)
-	panel2d.position = Vector2(-310, -262)
+	panel2d.scale = Vector2(0.56, 0.56)
+	panel2d.position = Vector2(-280, -355)
 	# control position indicator (bottom right)
 	ctrl_view = Control.new()
 	ctrl_view.anchor_left = 1.0
