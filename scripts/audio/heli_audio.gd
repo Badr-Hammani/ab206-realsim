@@ -107,6 +107,8 @@ func _ready() -> void:
 static func _db(lin: float) -> float:
 	return linear_to_db(maxf(lin, 0.0001))
 
+var horn_on := true                # set by main from the systems (bus powered, collective not full down)
+
 func update(fdm, cockpit: bool, paused: bool) -> void:
 	if paused:
 		for p in [turbine, rotor, gearbox, air, horn]:
@@ -124,7 +126,7 @@ func update(fdm, cockpit: bool, paused: bool) -> void:
 	gearbox.volume_db = _db(master_volume * (0.12 if cockpit else 0.05) * nrf)
 	var spd: float = fdm.air_body.length()
 	air.volume_db = _db(master_volume * clampf(spd / 60.0, 0.0, 1.0) * (0.25 if cockpit else 0.5))
-	horn.volume_db = _db(master_volume * 0.3) if fdm.nr_pct() < fdm._v("low_rpm_warning_pct") else -80.0
+	horn.volume_db = _db(master_volume * 0.3) if horn_on else -80.0
 
 func play_touchdown(sink: float) -> void:
 	if sink > 0.25:

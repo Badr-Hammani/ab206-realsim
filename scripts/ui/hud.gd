@@ -11,20 +11,24 @@ const HELP_GROUPS := [
 		["Arrow keys", "Cyclic nudges (spring back)"],
 		["W / S, wheel", "Collective up / down (Shift = faster) - lever stays where you leave it"],
 		["A / D", "Pedals (spring back to trim)   Q / E move pedal trim"],
-		["R / F", "Throttle open / close (full open = governor holds 100% N2)"],
+		["R / F", "Throttle open / close (full open = governor holds 100% N2). Hold F at idle = idle release to CLOSED; R from CLOSED = idle"],
+		["J   I   [ ]   Enter", "Cockpit switches + checklists / starter (hold) / governor RPM beep / checklist item checked"],
 		["H", "Training assist: off / damping / attitude hold / hover hold (not on the real aircraft)"],
 		["Y", "Training speed 100 / 75 / 50 %"],
 	]],
 	["View and sim", [
 		["V", "Cockpit / chase / free camera   right mouse = look around   C recentre"],
+		["Z", "Instrument view: look down and zoom onto the panel (Z again = look outside)"],
 		["Tab", "2D instrument panel     I J K L U O move free camera"],
 		["Esc", "Menu: lessons, aircraft, weather, settings     P pause"],
-		["F2  F3  F4  F5", "Reset on pad / hover 5 m / cruise 80 kt / autorotation at 2,500 ft"],
+		["F2  F3  F4  F5", "Reset on pad / hover 5 m / cruise 80 kt / autorotation at 2,500 ft   Shift+F2 cold and dark"],
+		["O", "Overhead console: circuit breakers (click = pull out / push in)"],
 		["F6  F7", "Telemetry overlay / graphics preset"],
 		["F8", "Joystick setup"],
 		["F10   N", "Phone controller (tilt a phone = cyclic / collective)   N set phone neutral"],
 		["F9  F11  F12", "Instructor messages / fullscreen / screenshot"],
 		["G   B   T", "Hover guide / outside sight gates / take all controls"],
+		["K   Shift+K   + / -", "Map: small / big (pin points, draw zones) / off   pin where you are   zoom the small map"],
 	]],
 ]
 const FIRST_FLIGHT := "First flight: on the pad, raise the collective (W) slowly until the skids get light, hold left pedal (A or Q trim) against the torque, keep the cyclic centred, and lift into a 1 m hover. Small, early corrections."
@@ -41,6 +45,8 @@ var show_telemetry := true
 var landing_label: Label
 var lesson_panel: PanelContainer
 var lesson_label: Label
+var cl_panel: PanelContainer
+var cl_label: Label
 var landing_time := 0.0
 var guide_view: Control
 var _guide := {}
@@ -102,6 +108,18 @@ func build(panel_scene_script: Script) -> void:
 	lesson_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lesson_label.custom_minimum_size = Vector2(430, 0)
 	lesson_panel.visible = false
+	cl_panel = PanelContainer.new()
+	cl_panel.add_theme_stylebox_override("panel", _panel_style(0.72))
+	cl_panel.anchor_left = 1.0
+	cl_panel.anchor_right = 1.0
+	cl_panel.offset_left = -470
+	cl_panel.offset_right = -14
+	cl_panel.offset_top = 14
+	add_child(cl_panel)
+	cl_label = _label(cl_panel, 14, Color(1.0, 1.0, 1.0))
+	cl_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cl_label.custom_minimum_size = Vector2(430, 0)
+	cl_panel.visible = false
 	help = PanelContainer.new()
 	var hsb := G.card()
 	hsb.bg_color = Color(0.08, 0.10, 0.13, 0.93)
@@ -314,6 +332,14 @@ func set_lesson(text: String) -> void:
 	lesson_panel.visible = text != ""
 	if text != "":
 		lesson_label.text = text
+
+## Checklist strip (top right): current item of the running flight-manual checklist.
+func set_checklist(text: String) -> void:
+	cl_panel.visible = text != ""
+	if text != "":
+		cl_label.text = text
+	# keep the lesson card below the checklist strip
+	lesson_panel.offset_top = (cl_panel.size.y + 24.0) if cl_panel.visible else 150.0
 
 func show_landing(text: String, col: Color) -> void:
 	landing_label.text = text

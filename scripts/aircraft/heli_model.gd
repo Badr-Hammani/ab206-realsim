@@ -172,6 +172,18 @@ func _build_interior(fdm, panel_texture: Texture2D) -> void:
 		_box(interior, Vector3(0.03, 0.3, 1.1), Vector3(sx * 0.714, -0.32, -1.0), frame)   # lower door
 	_box(interior, Vector3(1.2, 0.04, 1.35), Vector3(0, 0.98, -1.025), grey)      # roof
 	_box(interior, Vector3(0.5, 0.08, 0.3), Vector3(0.0, 0.9, -1.3), black)       # overhead console
+	# M2.30: circuit-breaker face of the overhead console (rows of black breaker caps with white
+	# label strips; the clickable version is the O panel)
+	var face := _mat(Color(0.16, 0.16, 0.17), 0.8)
+	var cap := _mat(Color(0.03, 0.03, 0.03), 0.6)
+	var lab := _mat(Color(0.85, 0.85, 0.82), 0.9)
+	_box(interior, Vector3(0.46, 0.006, 0.27), Vector3(0.0, 0.858, -1.3), face)
+	for col in 6:
+		for row in 4:
+			var bx := -0.19 + col * 0.076
+			var bz := -1.40 + row * 0.065
+			_cyl(interior, 0.008, 0.009, 0.012, Vector3(bx, 0.85, bz), cap, Vector3.ZERO, 8)
+			_box(interior, Vector3(0.04, 0.002, 0.008), Vector3(bx, 0.854, bz + 0.022), lab)
 	# cyclic stick (right seat pilot, between knees)
 	cyclic_pivot = Node3D.new()
 	cyclic_pivot.position = Vector3(0.38, -0.45, -1.25)

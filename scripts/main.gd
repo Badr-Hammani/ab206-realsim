@@ -9,12 +9,14 @@ const Trim = preload("res://scripts/fdm/trim.gd")
 const World = preload("res://scripts/world/world.gd")
 const HoverRefs = preload("res://scripts/world/hover_refs.gd")
 const HeliModel = preload("res://scripts/aircraft/heli_model.gd")
+const RotorWash = preload("res://scripts/world/rotor_wash.gd")
 const Controls = preload("res://scripts/input/controls.gd")
 const CameraRig = preload("res://scripts/core/camera_rig.gd")
 const Hud = preload("res://scripts/ui/hud.gd")
 const PanelScript = preload("res://scripts/ui/instrument_panel.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const JoyPanel = preload("res://scripts/ui/joy_panel.gd")
+const NavMap = preload("res://scripts/ui/nav_map.gd")
 const HeliAudio = preload("res://scripts/audio/heli_audio.gd")
 const Instructor = preload("res://scripts/core/instructor.gd")
 const Landing = preload("res://scripts/core/landing_rating.gd")
@@ -25,6 +27,10 @@ const Lessons = preload("res://scripts/core/lessons.gd")
 const Coach = preload("res://scripts/core/coach.gd")
 const HoverHold = preload("res://scripts/core/hover_hold.gd")
 const TrainingAssist = preload("res://scripts/core/training_assist.gd")
+const Systems = preload("res://scripts/aircraft/engine_systems.gd")
+const Checklist = preload("res://scripts/core/checklist.gd")
+const SystemsPanel = preload("res://scripts/ui/systems_panel.gd")
+const OverheadPanel = preload("res://scripts/ui/overhead_panel.gd")
 
 const SETTINGS_PATH := "user://settings.cfg"
 const SUBSTEPS := 2
@@ -40,6 +46,9 @@ var panel_vp: SubViewport
 var panel3d
 var menu
 var joy
+var _mouse_off_hint_at := -100000
+var rotor_wash                  # rotor_wash.gd: downwash dust near the ground
+var nav_map                     # moving map with pins and zones (real maps only)
 var touch
 var phone
 var phone_panel
@@ -56,12 +65,29 @@ var ghost := {}                   # instructor's suggested control positions (HU
 var preset := 1
 var visibility_m := 12000.0
 var vsi_lagged := 0.0
+var ball_lagged := 0.0        # slip ball (g, + = right), damped like the real liquid-filled tube
 var show_panel_2d := false
 var paused := false
 var _frame_ms: Array[float] = []
 var _fdm_usec_frame := 0
+# Auto quality: if the frame rate stays low for a few seconds, step the graphics preset down.
+const AUTO_Q_FPS := 38.0
+var _auto_q_off := false
+var _auto_q_wait := 8.0
+var _auto_q_ms := 0.0
+var _auto_q_n := 0
 var _touch_pending := false
 var _touch_sink := 0.0
+var systems                       # engine_systems.gd: switches, start, TOT, cautions (M2.30)
+var checklist                     # checklist.gd: the flight-manual checklists
+var sys_panel                     # J: cockpit systems + checklist panel
+var overhead                      # O: overhead console, circuit breakers (M2.30)
+var landing_light: SpotLight3D
+var _starter_by_key := false
+var _close_hold := 0.0            # F held at the idle stop = idle release
+var _fric := {"coll": 0.0, "thr": 0.0}
+var _hyd_ctl := {}                # control positions while the hydraulic boost is off (heavy controls)
+var _cl_strip_t := 0.0
 
 func _ready() -> void:
 	data = DataLoader.load_aircraft()
@@ -69,7 +95,8 @@ func _ready() -> void:
 	world = World.new()
 	world.name = "World"
 	add_child(world)
-	world.build()
+	world.season = _startup_season()
+	world.build(_startup_map())
 	fdm.ground = world.terrain
 	refs = HoverRefs.new()
 	refs.name = "HoverRefs"
@@ -93,10 +120,32 @@ func _ready() -> void:
 	heli.name = "Helicopter"
 	add_child(heli)
 	heli.build(fdm, panel_vp.get_texture())
+	# rotor-wash dust: OFF unless switched on in settings.cfg ([graphics] rotor_wash=true); the pilot
+	# asked for it to be removed (M2.24b)
+	var scf := ConfigFile.new()
+	scf.load("user://settings.cfg")
+	if bool(scf.get_value("graphics", "rotor_wash", false)):
+		rotor_wash = RotorWash.new()
+		rotor_wash.name = "RotorWash"
+		add_child(rotor_wash)
+		rotor_wash.setup(fdm, world.terrain, heli)
 
 	controls = Controls.new()
 	controls.name = "Controls"
 	add_child(controls)
+	systems = Systems.new(fdm)
+	checklist = Checklist.new()
+	checklist.systems = systems
+	checklist.fdm = fdm
+	landing_light = SpotLight3D.new()
+	landing_light.name = "LandingLight"
+	landing_light.position = Vector3(0.0, -0.9, -1.6)
+	landing_light.rotation_degrees = Vector3(-25.0, 0.0, 0.0)
+	landing_light.spot_range = 160.0
+	landing_light.spot_angle = 14.0
+	landing_light.light_energy = 6.0
+	landing_light.visible = false
+	heli.add_child(landing_light)
 	cam_rig = CameraRig.new()
 	add_child(cam_rig)
 	hud = Hud.new()
@@ -106,6 +155,12 @@ func _ready() -> void:
 	audio = HeliAudio.new()
 	add_child(audio)
 	instructor = Instructor.new()
+	var vp := AudioStreamPlayer.new()
+	vp.name = "InstructorVoice"
+	vp.process_mode = Node.PROCESS_MODE_ALWAYS
+	vp.volume_db = -1.0
+	add_child(vp)
+	instructor.voice_player = vp
 	coach = Coach.new()
 	coach.instructor = instructor
 	lessons = Lessons.new()
@@ -120,9 +175,14 @@ func _ready() -> void:
 	menu.action.connect(_on_menu_action)
 	joy = JoyPanel.new()
 	joy.controls = controls
+	joy.assist = assist
 	joy.ui_theme = menu._theme
 	add_child(joy)
 	joy.closed.connect(func() -> void: _set_paused(menu.visible))
+	nav_map = NavMap.new()
+	add_child(nav_map)
+	nav_map.setup(self, world.terrain, world.map_id)
+	nav_map.closed.connect(func() -> void: _set_paused(menu.visible))
 	touch = TouchControls.new()
 	touch.main = self
 	touch.controls = controls
@@ -132,21 +192,38 @@ func _ready() -> void:
 	add_child(phone)
 	controls.phone = phone
 	phone.role_connected.connect(func(r: String) -> void:
-		instructor.force("PHONE %s connected. It controls the %s from %s current position right away." % [r.to_upper(), r, "their" if r == "pedals" else "its"]))
+		instructor.force(("PHONE (ONE-PHONE MODE) connected: tilt = cyclic, turn = pedals, thumb slider = collective, from the current positions." if r == "all" else "PHONE %s connected. It controls the %s from %s current position right away." % [r.to_upper(), r, "their" if r == "pedals" else "its"])))
 	phone.role_lost.connect(func(r: String) -> void:
 		instructor.force("PHONE %s lost. The control stays where it was; keyboard/mouse have it again." % r.to_upper()))
 	phone.calibrated.connect(func(_r: String) -> void: controls.phone_release())
+	controls.mouse_cyclic_toggled.connect(func(on: bool) -> void:
+		instructor.force("Mouse cyclic ON: move the mouse to fly." if on else "Mouse cyclic OFF (M turns it back on). Use the arrow keys, a joystick or a phone for the cyclic."))
+	controls.joy_action_pressed.connect(_on_joy_action)
 	phone_panel = PhonePanel.new()
 	phone_panel.phone = phone
 	phone_panel.controls = controls
 	phone_panel.ui_theme = menu._theme
 	add_child(phone_panel)
 	phone_panel.closed.connect(func() -> void: _set_paused(menu.visible))
+	sys_panel = SystemsPanel.new()
+	sys_panel.main = self
+	sys_panel.systems = systems
+	sys_panel.checklist = checklist
+	sys_panel.ui_theme = menu._theme
+	add_child(sys_panel)
+	sys_panel.closed.connect(func() -> void: _set_paused(paused))
+	overhead = OverheadPanel.new()
+	overhead.systems = systems
+	add_child(overhead)
+	overhead.closed.connect(func() -> void: _set_paused(paused))
 	if phone.autostart:
 		phone.start()
 
 	if OS.has_feature("web"):
-		preset = 0   # web build: start on Low (phones / integrated GPUs); saved choice overrides
+		# web build: start on Low (Android phones / integrated GPUs); iPhones start on High (Ultra
+		# plus the big map ran an iPhone out of memory and Safari closed the page). A saved choice
+		# overrides both.
+		preset = 2 if OS.has_feature("web_ios") else 0
 	_load_settings()
 	apply_preset(preset)
 	set_visibility(visibility_m)
@@ -158,6 +235,18 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--autoshot="):
 			_auto_dir = a.substr(11)
+		elif a.begins_with("--exposure="):
+			world.env.tonemap_exposure = float(a.substr(11))
+		elif a.begins_with("--white="):
+			world.env.tonemap_white = float(a.substr(8))
+		elif a.begins_with("--freecam="):
+			# test views: --freecam=x,y,z,yaw_deg,pitch_deg puts the free camera there (menu closed)
+			var v := a.substr(10).split_floats(",")
+			if v.size() >= 5:
+				cam_rig.mode = 2
+				cam_rig.free_pos = Vector3(v[0], v[1], v[2])
+				cam_rig.free_yaw = deg_to_rad(v[3])
+				cam_rig.free_pitch = deg_to_rad(v[4])
 	if not touch.active:
 		instructor.force("Welcome to the Bell 206B-3. Engine running, rotor at 100%, collective down on the main pad. Press F1 for controls. Raise the collective (W or mouse wheel) slowly and hold left pedal (A) as the torque builds.")
 
@@ -178,7 +267,9 @@ func _place(pos: Vector3, heading: float, speed_kt: float) -> void:
 	Trim.trim(fdm, heading, v)
 	fdm.omega = Vector3.ZERO
 	controls.set_from_trim(fdm.cyclic_lon, fdm.cyclic_lat, fdm.collective, fdm.pedal, 1.0)
+	systems.engine_running()
 	vsi_lagged = fdm.vs_fpm()
+	ball_lagged = 0.0
 
 func reset_on_pad() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
@@ -199,7 +290,24 @@ func reset_on_pad() -> void:
 	fdm.n1 = fdm.n1_for_power(float(out["q_load"]) * fdm.omega100 + 150.0 * fdm.omega100, dens)
 	fdm.gov_int = fdm.n1 - fdm.n1_for_power(30000.0, dens)
 	controls.set_from_trim(0.0, 0.0, 0.0, 0.0, 1.0)
+	systems.engine_running()
 	vsi_lagged = 0.0
+
+## Cold and dark on the main pad: engine stopped and cool, rotor stopped, every switch OFF,
+## throttle CLOSED, frictions ON. Start it with the flight-manual checklist (J).
+func reset_cold_dark(quiet := false) -> void:
+	reset_on_pad()
+	systems.cold_and_dark()
+	fdm.reset_dynamic_state()
+	fdm.nr = 0.0
+	fdm.n2 = 0.0
+	fdm.n1 = 0.0
+	controls.set_from_trim(0.0, 0.0, 0.0, 0.0, 0.0)
+	controls.throttle = 0.0
+	_fric = {"coll": 0.0, "thr": 0.0}
+	checklist.start_list("prestart")
+	if not quiet:
+		instructor.force("COLD AND DARK on the pad: engine stopped, every switch OFF, throttle CLOSED, frictions ON. Press J for the cockpit switches and the flight-manual checklist (prestart, start, run-up). I = starter (hold), F/R = throttle, [ ] = governor RPM, Enter = item checked.")
 
 func reset_hover() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
@@ -209,13 +317,37 @@ func reset_hover() -> void:
 func reset_cruise() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
 	_place(p + Vector3(0, 300.0 + fdm.cg_height, 1500.0), 0.0, 80.0)
-	instructor.force("CRUISE 80 kt at about 1,000 ft above the valley floor, heading north up the valley. The main pad is straight ahead, 1.5 km.")
+	if world.map_id == "khouribga":
+		instructor.force("CRUISE 80 kt at about 1,000 ft above the Khouribga plateau, heading north. The helipad on the main apron is straight ahead, 1.5 km; runway 05/23 is on your right and the city to the north-east.")
+	else:
+		instructor.force("CRUISE 80 kt at about 1,000 ft above the valley floor, heading north up the valley. The main pad is straight ahead, 1.5 km.")
 
 func reset_autorotation() -> void:
 	var p: Vector3 = world.terrain.pads["Main helipad"]["pos"]
 	_place(p + Vector3(0, 760.0 + fdm.cg_height, 1800.0), 0.0, 80.0)
 	controls.throttle = 0.0
 	instructor.force("AUTOROTATION PRACTICE: the throttle has been rolled to idle (simulated engine failure). LOWER THE COLLECTIVE NOW (S), keep 55-65 kt, keep rotor RPM in the green (90-107%). Roll the throttle back on (R) for a power recovery.")
+
+func set_throttle_closed(on: bool) -> void:
+	if on and controls.throttle > 0.02:
+		instructor.force("Roll the throttle to the idle stop first (F), then the idle release lets it go to CLOSED.")
+		return
+	systems.throttle_closed = on
+	controls.throttle = 0.0
+	if on:
+		instructor.force("THROTTLE CLOSED (idle release pressed): fuel cut off." + (" The engine stops." if fdm.lit else ""), "Throttle closed.")
+	else:
+		instructor.force("Throttle to the IDLE stop." + (" Fuel is on: light-off now if the starter is turning the engine." if systems.fuel_valve else " (FUEL VALVE is OFF.)"), "Throttle idle.")
+
+func set_friction(on: bool) -> void:
+	systems.friction = on
+	_fric = {"coll": controls.collective, "thr": controls.throttle}
+
+## Governor RPM beep switch: 97-100% N2 (needs electrical power).
+func beep_gov(dir: float, dt := 0.5) -> void:
+	if not systems.bus_powered or not systems.cb_in("GOV"):
+		return
+	fdm.gov_set_pct = clampf(fdm.gov_set_pct + dir * 1.2 * dt, 97.0, 100.0)
 
 func set_assist(l: int, quiet := false) -> void:
 	assist.set_level(l)
@@ -234,14 +366,101 @@ func set_sim_speed(v: float) -> void:
 func set_weight(kg: float) -> void:
 	fdm.set_mass(kg)
 
+func reset_defaults() -> void:
+	# Aircraft & weather
+	fdm.set_mass(1200.0)
+	fdm.atmo.wind_from_deg = 270.0
+	fdm.atmo.wind_speed_kt = 5.0
+	fdm.atmo.gust_intensity = 0.2
+	fdm.atmo.temp_offset_c = 0.0
+	set_visibility(12000.0)
+	# Training & display
+	set_assist(0, true)
+	assist.auto_pedal = false
+	lessons.auto_assist = false
+	set_sim_speed(1.0)
+	instructor.enabled = true
+	instructor.voice = true
+	coach.enabled = true
+	show_guide = true
+	refs.enabled = true
+	# Controls
+	controls.mouse_sensitivity = 1.0
+	controls.invert_mouse_y = false
+	controls.mouse_cyclic = true
+	controls.pov_hat_look = true
+	controls.pov_look_speed = 1.0
+	controls.joy_smooth_ms = 50.0
+	controls.joy_cyc_trim = Vector2.ZERO
+	controls.pedal_trim = 0.0
+	var tf: int = controls.find_tflight_stick_x()
+	if tf >= 0:
+		controls.apply_tflight_stick_x_preset(tf)
+	# Graphics & sound
+	_auto_q_off = false
+	apply_preset(2 if OS.has_feature("web_ios") else (0 if OS.has_feature("web") else 1))
+	if world and world.hd_ground:
+		world.hd_ground.set_enabled(true)
+	audio.master_volume = 0.8
+	_save_settings()
+	controls.save_config()
+	if menu and menu.visible:
+		menu.build()
+	instructor.force("All parameters reset to defaults.")
+
+## Map chosen at start-up: command line --map=<id> wins, else the saved setting.
+var map_override := ""            # tests set this before adding the scene
+static var _cmdline_map_used := false   # --map= only applies to the first start, not after a map switch
+
+func _startup_map() -> String:
+	if map_override != "":
+		return map_override
+	if not _cmdline_map_used:
+		_cmdline_map_used = true
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--map="):
+				return a.substr(6)
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) == OK:
+		return str(cf.get_value("world", "map", "valle"))
+	return "valle"
+
+## Photo season of real maps: saved choice, else by today's date (Dec-May green, Jun-Nov dry).
+func _startup_season() -> String:
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) == OK and cf.has_section_key("world", "season"):
+		return str(cf.get_value("world", "season"))
+	var m: int = Time.get_date_dict_from_system()["month"]
+	return "spring" if (m >= 12 or m <= 5) else "summer"
+
+func set_season(s: String) -> void:
+	world.set_season(s)
+	if nav_map:
+		nav_map.set_season(s)
+	_save_settings()
+
+## Switch map: saves the choice and rebuilds the whole scene (about 2-4 s on the real map).
+func set_map(id: String) -> void:
+	if id == world.map_id:
+		return
+	world.map_id = id
+	_save_settings()
+	controls.save_config()
+	phone.save_config()
+	phone.stop()
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	get_tree().reload_current_scene()
+
 func set_visibility(m: float) -> void:
 	visibility_m = m
 	world.set_visibility(m)
 
 # ---------------------------------------------------------- graphics presets
 func apply_preset(i: int) -> void:
-	preset = clampi(i, 0, 2)
+	preset = clampi(i, 0, 3)
 	var vp := get_viewport()
+	var web := OS.has_feature("web")
 	match preset:
 		0:
 			vp.scaling_3d_scale = 0.5
@@ -268,10 +487,55 @@ func apply_preset(i: int) -> void:
 			world.set_tree_count(9000)
 			world.terrain.set_detail(1)
 			cam_rig.cam.far = 12000.0
+			if web:
+				vp.scaling_3d_scale = 0.6     # phone screens are 3x density: 0.6 is still sharp
+		3:
+			# Ultra: for strong phones (iPhone 15/16 class) and gaming PCs. Longest views, most
+			# houses and trees, widest live HD ground photo, 4-split shadows to 800 m.
+			vp.scaling_3d_scale = 0.75 if web else 1.0
+			vp.msaa_3d = Viewport.MSAA_2X if web else Viewport.MSAA_4X
+			world.sun.shadow_enabled = true
+			world.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+			world.sun.directional_shadow_max_distance = 800.0
+			world.set_tree_count(9000)
+			world.terrain.set_detail(1)
+			cam_rig.cam.far = 16000.0
+	world.set_draw_preset(preset)
+	if rotor_wash:
+		rotor_wash.set_profile(preset)
 	_save_settings()
 
+## Lowers the preset (then the render scale on Low) when the average FPS stays under
+## AUTO_Q_FPS for 4 s of flying. Pressing F7 yourself turns this off for the session.
+func _auto_quality(delta: float) -> void:
+	if _auto_q_off or paused or _auto_dir != "" or DisplayServer.get_name() == "headless":
+		return
+	if not get_window().has_focus():
+		return
+	if _auto_q_wait > 0.0:
+		_auto_q_wait -= delta
+		return
+	_auto_q_ms += delta * 1000.0
+	_auto_q_n += 1
+	if _auto_q_ms < 4000.0:
+		return
+	var fps := 1000.0 * _auto_q_n / _auto_q_ms
+	_auto_q_ms = 0.0
+	_auto_q_n = 0
+	if fps >= AUTO_Q_FPS:
+		return
+	_auto_q_wait = 3.0
+	if preset > 0:
+		apply_preset(preset - 1)
+		instructor.force("Frame rate was low (%.0f FPS): graphics lowered to %s. F7 changes it." % [fps, preset_name()])
+	elif get_viewport().scaling_3d_scale > 0.41:
+		get_viewport().scaling_3d_scale = 0.4
+		instructor.force("Frame rate still low (%.0f FPS): render scale lowered." % fps)
+	else:
+		_auto_q_off = true
+
 func preset_name() -> String:
-	return ["Low", "Medium", "High"][preset]
+	return ["Low", "Medium", "High", "Ultra"][preset]
 
 # ------------------------------------------------------------------ input
 func _unhandled_input(event: InputEvent) -> void:
@@ -279,13 +543,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		controls.mouse_look_held = event.pressed
 	if event is InputEventMouseMotion and controls.mouse_look_held:
 		cam_rig.mouse_look(event.relative)
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not controls.mouse_cyclic and not controls.mouse_look_held and not controls._joy_bound("cyclic_lat") and (event as InputEventMouseMotion).relative.length() > 25.0 and Time.get_ticks_msec() - _mouse_off_hint_at > 15000:
+		_mouse_off_hint_at = Time.get_ticks_msec()
+		instructor.force("The mouse cyclic is OFF. Press M to fly the cyclic with the mouse.")
+	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu.visible and not joy.visible and not phone_panel.visible and not touch.active and not nav_map.is_big() and not sys_panel.visible and not overhead.visible:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	match event.physical_keycode:
 		KEY_ESCAPE:
-			if phone_panel.visible:
+			if nav_map.is_big():
+				nav_map.set_mode(nav_map.Mode.OFF)
+			elif phone_panel.visible:
 				phone_panel.close()
 				_set_paused(menu.visible)
 			elif joy.visible:
@@ -297,6 +566,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				menu.open()
 				_set_paused(true)
+		KEY_DELETE:
+			if nav_map.is_big():
+				nav_map.delete_selected()
 		KEY_P:
 			if not menu.visible:
 				_set_paused(not paused)
@@ -304,7 +576,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			hud.help.visible = not hud.help.visible
 		KEY_F2:
 			lessons.stop()
-			reset_on_pad()
+			if event.shift_pressed:
+				reset_cold_dark()
+			else:
+				reset_on_pad()
 		KEY_F3:
 			lessons.stop()
 			reset_hover()
@@ -317,7 +592,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F6:
 			hud.show_telemetry = not hud.show_telemetry
 		KEY_F7:
-			apply_preset((preset + 1) % 3)
+			_auto_q_off = true
+			apply_preset((preset + 1) % 4)
 			instructor.force("Graphics preset: " + preset_name())
 		KEY_F8:
 			if joy.visible:
@@ -348,6 +624,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			cam_rig.cycle()
 		KEY_C:
 			cam_rig.recenter()
+		KEY_Z:
+			cam_rig.toggle_panel_focus()
 		KEY_H:
 			set_assist((assist.level + 1) % 4)
 		KEY_G:
@@ -362,7 +640,99 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_sim_speed(0.75 if sim_speed > 0.9 else (0.5 if sim_speed > 0.6 else 1.0))
 		KEY_TAB:
 			show_panel_2d = not show_panel_2d
+		KEY_K:
+			if cam_rig.mode == cam_rig.Mode.FREE:
+				pass                  # I J K L U O move the free camera
+			elif event.shift_pressed:
+				if nav_map.available():
+					instructor.force("Point %s pinned here. K opens the map; click a point to fly to it." % nav_map.drop_pin_here())
+			elif not nav_map.available():
+				instructor.force("The moving map is available on the Khouribga map (Esc > Fly > Map).")
+			elif not menu.visible:
+				nav_map.cycle()
+				if nav_map.is_big():
+					_set_paused(true)
+		KEY_EQUAL, KEY_KP_ADD:
+			nav_map.zoom_small(0.8)
+		KEY_MINUS, KEY_KP_SUBTRACT:
+			nav_map.zoom_small(1.25)
 		KEY_F12:
+			take_screenshot("")
+		KEY_J:
+			if cam_rig.mode != cam_rig.Mode.FREE:
+				if sys_panel.visible:
+					sys_panel.close()
+				else:
+					sys_panel.open()
+					_set_paused(paused)
+		KEY_O:
+			if cam_rig.mode != cam_rig.Mode.FREE:
+				overhead.toggle()
+				_set_paused(paused)
+		KEY_ENTER, KEY_KP_ENTER:
+			if checklist.active() and not checklist.finished():
+				checklist.confirm()
+		KEY_R:
+			if systems.throttle_closed:
+				set_throttle_closed(false)
+
+func _on_joy_action(act: String) -> void:
+	if menu.visible or joy.visible or phone_panel.visible:
+		return
+	match act:
+		"trim_set":
+			controls.set_force_trim()
+			instructor.force("FORCE TRIM SET (cyclic + pedals). Release stick to centre — helicopter holds this attitude.")
+		"trim_reset":
+			controls.reset_force_trim()
+			instructor.force("FORCE TRIM RESET — smoothly returning cyclic and pedal trim to neutral.")
+		"cam_panel_focus":
+			cam_rig.toggle_panel_focus()
+		"cam_recenter":
+			cam_rig.recenter()
+		"cam_cycle":
+			cam_rig.cycle()
+		"pause":
+			_set_paused(not paused)
+		"reset_pad":
+			lessons.stop()
+			reset_on_pad()
+		"reset_hover":
+			lessons.stop()
+			reset_hover()
+		"reset_cruise":
+			lessons.stop()
+			reset_cruise()
+		"reset_auto":
+			lessons.stop()
+			reset_autorotation()
+		"toggle_assist":
+			set_assist((assist.level + 1) % 4)
+		"toggle_auto_pedal":
+			assist.auto_pedal = not assist.auto_pedal
+			instructor.force("AUTO-PEDALS ON: heading hold + torque cancel active (twist still turns smoothly)." if assist.auto_pedal else "AUTO-PEDALS OFF: full manual pedals.")
+		"toggle_map":
+			if not nav_map.available():
+				instructor.force("The moving map is available on the Khouribga map (Esc > Fly > Map).")
+			else:
+				nav_map.cycle()
+				if nav_map.is_big():
+					_set_paused(true)
+		"toggle_panel_2d":
+			show_panel_2d = not show_panel_2d
+		"toggle_guide":
+			show_guide = not show_guide
+			instructor.force("Hover guide circle " + ("ON" if show_guide else "OFF - fly with the outside gates"))
+		"toggle_gates":
+			refs.enabled = not refs.enabled
+			instructor.force("Outside hover references (gates) " + ("ON" if refs.enabled else "OFF"))
+		"take_control":
+			lessons.take_control()
+		"sim_speed":
+			set_sim_speed(0.75 if sim_speed > 0.9 else (0.5 if sim_speed > 0.6 else 1.0))
+		"toggle_hud":
+			hud.show_telemetry = not hud.show_telemetry
+		"screenshot":
 			take_screenshot("")
 
 ## F12: saves a PNG to the user data folder (shown on screen). Also used by --autoshot test mode.
@@ -380,7 +750,7 @@ var _auto_dir := ""
 
 func _autoshot_step() -> void:
 	_auto_frames += 1
-	var plan := {60: "pad_cockpit", 61: "", 120: "pad_chase", 121: "", 180: "hover_chase", 181: "", 240: "hover_cockpit", 241: "", 300: "cruise_chase", 360: "auto_cockpit", 400: "menu", 440: "joy", 480: "help", 520: "phone", 580: "lesson", 640: "lesson_menu", 644: "menu_settings", 648: "menu_weather", 720: "refs_cockpit", 760: "refs_chase", 820: "refs_cockpit_2m_left_high", 960: "mentor_handover", 970: "quit"}
+	var plan := {60: "pad_cockpit", 61: "", 120: "pad_chase", 121: "", 180: "hover_chase", 181: "", 240: "hover_cockpit", 241: "", 300: "cruise_chase", 360: "auto_cockpit", 400: "menu", 440: "joy", 480: "help", 520: "phone", 580: "lesson", 640: "lesson_menu", 644: "menu_settings", 648: "menu_weather", 720: "refs_cockpit", 760: "refs_chase", 820: "refs_cockpit_2m_left_high", 960: "mentor_handover", 1000: "panel_default", 1040: "panel_focus", 1080: "panel_focus_hover", 1090: "quit"}
 	match _auto_frames:
 		1:
 			hud.show_telemetry = true
@@ -442,6 +812,16 @@ func _autoshot_step() -> void:
 			lessons.mentor_axes = "all"
 			lessons.start("h_mentor")
 			show_guide = true
+		970:
+			lessons.stop()
+			reset_on_pad()
+			cam_rig.mode = cam_rig.Mode.COCKPIT
+			cam_rig.recenter()
+			show_guide = false
+		1001:
+			cam_rig.toggle_panel_focus()
+		1050:
+			reset_hover()
 		770:
 			var pad: Vector3 = world.terrain.pads["Main helipad"]["pos"]
 			_place(pad + Vector3(-2.0, 1.6 + fdm.cg_height, 0.0), 0.0, 0.0)
@@ -455,7 +835,7 @@ func _autoshot_step() -> void:
 func _set_paused(on: bool) -> void:
 	paused = on
 	get_tree().paused = on
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (menu.visible or joy.visible or phone_panel.visible or touch.active) else Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (menu.visible or joy.visible or phone_panel.visible or touch.active or (nav_map != null and nav_map.is_big()) or (sys_panel != null and sys_panel.visible) or (overhead != null and overhead.visible)) else Input.MOUSE_MODE_CAPTURED
 
 func _on_menu_action(a: String) -> void:
 	match a:
@@ -470,10 +850,14 @@ func _on_menu_action(a: String) -> void:
 			reset_cruise()
 		"reset_auto":
 			reset_autorotation()
+		"reset_cold":
+			reset_cold_dark()
 		"joy":
 			joy.open()
 		"phone":
 			phone_panel.open()
+		"defaults":
+			reset_defaults()
 		"quit":
 			_save_settings()
 			controls.save_config()
@@ -501,7 +885,10 @@ func _on_menu_action(a: String) -> void:
 func _physics_process(delta: float) -> void:
 	if paused:
 		return
+	# throttle key rate: slower on the ground below flying rpm so the run-up can be done smoothly
+	controls.throttle_rate = 0.15 if (fdm.on_ground and fdm.nr_pct() < 95.0) else 0.6
 	controls.update(delta)
+	_cockpit_inputs(delta)
 	var dt: float = delta / SUBSTEPS
 	_fdm_usec_frame = 0
 	var hh = lessons.hands
@@ -511,6 +898,7 @@ func _physics_process(delta: float) -> void:
 		fdm.cyclic_lat = controls.cyclic_lat
 		fdm.collective = controls.collective
 		fdm.pedal = controls.pedal
+		systems.pre_step(dt, controls)
 		fdm.throttle = controls.throttle
 		if hands_on:
 			# instructor's hands on the dual controls fly the held axes
@@ -524,7 +912,12 @@ func _physics_process(delta: float) -> void:
 				fdm.pedal = hh.ped
 		# training assists (not on the real 206) act only on the controls you fly yourself
 		assist.apply(dt, not (hands_on and hh.hold["cyc"]), not (hands_on and hh.hold["ped"]))
+		if not systems.hyd_available and fdm.nr_pct() > 40.0:
+			_heavy_controls(dt)
+		else:
+			_hyd_ctl.clear()
 		fdm.step(dt)
+		systems.post_step(dt)
 		_fdm_usec_frame += fdm.last_step_usec
 		if fdm.touchdown_event:
 			_touch_pending = true
@@ -532,9 +925,50 @@ func _physics_process(delta: float) -> void:
 	if hands_on:
 		# dual controls are linked: your controls follow the instructor's, so handing over is bumpless
 		controls.follow(hh.hold, hh.coll, hh.lon, hh.lat, hh.ped)
+	checklist.note_controls(controls.cyclic_lon, controls.cyclic_lat, controls.collective, controls.pedal)
+	checklist.update(delta)
 	ghost = lessons.suggest(delta)
 	coach.update(delta, fdm, controls.cyclic_lon, controls.cyclic_lat, controls.collective, controls.pedal)
 	instructor.update(fdm, delta)
+
+## Starter, idle release, frictions and governor beep (keys and the J panel).
+func _cockpit_inputs(delta: float) -> void:
+	var free_cam: bool = cam_rig.mode == cam_rig.Mode.FREE
+	var starter_key := Input.is_physical_key_pressed(KEY_I) and not free_cam
+	if starter_key:
+		systems.starter_btn = true
+		_starter_by_key = true
+	elif _starter_by_key:
+		systems.starter_btn = false        # key released (the J panel button works on its own)
+		_starter_by_key = false
+	if Input.is_physical_key_pressed(KEY_BRACKETLEFT):
+		beep_gov(-1.0, delta)
+	if Input.is_physical_key_pressed(KEY_BRACKETRIGHT):
+		beep_gov(1.0, delta)
+	# idle release: keep F held at the idle stop for half a second to roll the throttle to CLOSED
+	var closing: bool = Input.is_action_pressed("throttle_close") or controls.joy_button_held("throttle_close")
+	if closing and controls.throttle <= 0.001 and not systems.throttle_closed:
+		_close_hold += delta
+		if _close_hold > 0.5:
+			set_throttle_closed(true)
+	else:
+		_close_hold = 0.0
+	if systems.friction:
+		controls.collective = _fric["coll"]
+		controls.throttle = _fric["thr"]
+	landing_light.visible = systems.landing_light and systems.bus_powered
+
+## Hydraulic boost OFF: the controls are heavy (SIMULATION: the cyclic and collective follow your
+## input more slowly, as if pushing against the feedback forces).
+func _heavy_controls(dt: float) -> void:
+	for k in ["lon", "lat", "coll"]:
+		var want: float = {"lon": fdm.cyclic_lon, "lat": fdm.cyclic_lat, "coll": fdm.collective}[k]
+		var cur: float = _hyd_ctl.get(k, want)
+		cur = move_toward(cur, want, (0.35 if k != "coll" else 0.25) * dt)
+		_hyd_ctl[k] = cur
+	fdm.cyclic_lon = _hyd_ctl["lon"]
+	fdm.cyclic_lat = _hyd_ctl["lat"]
+	fdm.collective = _hyd_ctl["coll"]
 
 func _process(delta: float) -> void:
 	if _auto_dir != "":
@@ -542,12 +976,18 @@ func _process(delta: float) -> void:
 	_frame_ms.append(delta * 1000.0)
 	if _frame_ms.size() > 600:
 		_frame_ms.pop_front()
+	_auto_quality(delta)
 	var xf := Transform3D(fdm.basis, fdm.pos)
 	heli.global_transform = xf
 	heli.update_visual(fdm, 0.0 if paused else delta)
 	heli.set_cockpit_view(cam_rig.mode == cam_rig.Mode.COCKPIT, show_panel_2d)
+	var pov: Vector2 = controls.pov_look_vector()
+	if pov != Vector2.ZERO and not menu.visible and not joy.visible and not phone_panel.visible and not nav_map.is_big():
+		var rdt := delta / maxf(Engine.time_scale, 0.01)
+		cam_rig.mouse_look(pov * 520.0 * controls.pov_look_speed * rdt)
 	cam_rig.update_camera(xf, delta)
 	world.update_windsocks(fdm.atmo.mean_wind(5.0))
+	audio.horn_on = systems.horn
 	audio.update(fdm, cam_rig.mode == cam_rig.Mode.COCKPIT, paused)
 	if not paused:
 		lessons.update(delta, _touch_pending, _touch_sink)
@@ -570,11 +1010,15 @@ func _process(delta: float) -> void:
 		hud.show_landing("TAIL STRIKE", Color(1.0, 0.35, 0.3))
 	# instrument values (VSI has a ~1.5 s lag like a real pressure VSI)
 	vsi_lagged = lerpf(vsi_lagged, fdm.vs_fpm(), clampf(delta / 1.5, 0.0, 1.0))
+	ball_lagged = lerpf(ball_lagged, fdm.ball_g(), clampf(delta / 0.35, 0.0, 1.0))   # liquid-damped ball
 	var vals := {
 		"tq": maxf(fdm.torque_pct, 0.0), "nr": fdm.nr_pct(), "n2": fdm.n2_pct(), "n1": fdm.n1,
 		"ias": fdm.ias_kt(), "pitch": fdm.pitch_deg(), "roll": fdm.roll_deg(),
-		"alt_ft": fdm.pos.y / 0.3048, "vsi": vsi_lagged, "hdg": fdm.heading_deg(),
-		"low_rpm": fdm.nr_pct() < fdm._v("low_rpm_warning_pct"),
+		"alt_ft": fdm.pos.y / 0.3048, "vsi": vsi_lagged, "hdg": fdm.heading_deg(), "ball": ball_lagged,
+		"low_rpm": systems.cautions["ROTOR LOW RPM"],
+		"tot": systems.tot, "cautions": systems.cautions, "eng_oil": systems.eng_oil_psi,
+		"trans_oil": systems.xmsn_oil_psi, "fuel_lb": systems.fuel_lb if systems.bus_powered and systems.cb_in("FUEL QTY") else 0.0, "fuel_psi": systems.fuel_psi,
+		"eng_oil_c": systems.eng_oil_c, "trans_oil_c": systems.xmsn_oil_c, "amps": systems.gen_amps, "oat": systems.oat_c,
 	}
 	if phone.running:
 		_phone_feedback(delta, vals)
@@ -583,7 +1027,8 @@ func _process(delta: float) -> void:
 	hud.panel_holder.visible = show_panel_2d or cam_rig.mode != cam_rig.Mode.COCKPIT
 	hud.set_controls(fdm.cyclic_lon, fdm.cyclic_lat, fdm.collective, fdm.pedal, fdm.throttle, controls.pedal_trim)
 	hud.set_ghost(ghost, controls.cyclic_lon, controls.cyclic_lat, assist.active_level >= 2)
-	hud.set_lesson(lessons.objective if lessons.active() else "")
+	hud.set_lesson(lessons.objective if lessons.active() and not sys_panel.visible else "")
+	hud.set_checklist(_checklist_strip() if not sys_panel.visible else "")
 	var gd: Dictionary = lessons.guide if lessons.active() else {}
 	refs.eye_body = cam_rig.eye
 	refs.update(gd, "hover" if lessons.id == "h_mentor" else str(coach.ctx.get("phase", "")), fdm, delta)
@@ -593,6 +1038,24 @@ func _process(delta: float) -> void:
 	hud.update_hud(delta, _telemetry_text(), _status_text(), instructor.message, instructor.message_time > 0.0)
 
 var _buzz_t := 0.0
+
+## One-line view of the running checklist (top right) while the J panel is closed.
+func _checklist_strip() -> String:
+	if not checklist.active():
+		return ""
+	var l: Dictionary = checklist.current_list()
+	if checklist.finished():
+		_cl_strip_t += get_process_delta_time()
+		if _cl_strip_t > 6.0:
+			return ""
+		return "%s - COMPLETE" % l.get("title", "")
+	_cl_strip_t = 0.0
+	var txt := "%s  %d/%d\n▶ %s" % [l.get("title", ""), checklist.done_count(), checklist.state.size(), checklist.current_text()]
+	txt += "\n   " + ("Enter = checked" if checklist.current_is_manual() else "ticks itself when done (Enter = skip)") + "   ·   J = switches + full list"
+	var lit: Array = systems.lit_cautions()
+	if not lit.is_empty():
+		txt += "\nCAUTION: " + ", ".join(lit)
+	return txt
 
 ## Data for the hover guide (training aid). In lessons it shows the lesson's target; in free
 ## flight it appears in a low hover and shows drift, height and yaw only.
@@ -622,6 +1085,7 @@ func _phone_feedback(delta: float, vals: Dictionary) -> void:
 	phone.role_status["cyclic"] = "%d,%s" % [1 if controls.phone_cyc_engaged else 0, txt]
 	phone.role_status["collective"] = "%d,%s" % [1 if controls.phone_coll_engaged else 0, txt]
 	phone.role_status["pedals"] = "%d,%s" % [1 if controls.phone_ped_engaged else 0, txt]
+	phone.role_status["all"] = "%d,%s" % [1 if controls.phone_cyc_engaged else 0, txt]
 	_buzz_t -= delta
 	if vals["low_rpm"] and not paused and _buzz_t <= 0.0:
 		phone.buzz(250)
@@ -641,6 +1105,7 @@ func _telemetry_text() -> String:
 	t += "IAS %5.1f kt   GS %5.1f kt   VS %+6.0f ft/min\n" % [fdm.ias_kt(), fdm.groundspeed_kt(), fdm.vs_fpm()]
 	t += "ALT %6.0f ft MSL   skid height %6.1f m AGL   DA %5.0f ft\n" % [fdm.pos.y / 0.3048, fdm.agl, fdm.atmo.density_altitude_ft(fdm.pos.y)]
 	t += "NR %5.1f%%   N2 %5.1f%%   TQ %5.1f%%   N1 %5.1f%%   %s\n" % [fdm.nr_pct(), fdm.n2_pct(), fdm.torque_pct, fdm.n1, "ENGAGED" if fdm.engaged else "FREEWHEEL (needles split)"]
+	t += systems.summary() + ("   ENGINE STOPPED" if not fdm.lit else ("   STARTING" if fdm.starting else "")) + ("   THROTTLE CLOSED" if systems.throttle_closed else "") + "\n"
 	t += "thrust %5.0f N (%.2f g)   Ct/s %.3f%s   mu %.3f%s\n" % [fdm.thrust, fdm.thrust / (fdm.mass * 9.80665), fdm.ct_sigma, "  STALL" if fdm.stalled else "", fdm.mu, ("   VORTEX RING STATE %.0f%%" % (fdm.vrs * 100.0)) if fdm.vrs > 0.05 else ""]
 	t += "induced vel %5.2f m/s   ground effect %4.1f%% less induced flow   hub %4.1f m AGL\n" % [fdm.vi, (1.0 - fdm.ge_factor) * 100.0, fdm.hub_agl]
 	t += "tail rotor thrust %5.0f N   disc tilt aft %+5.1f  right %+5.1f deg%s\n" % [fdm.tr_thrust, rad_to_deg(fdm.a1), rad_to_deg(fdm.b1), "   MAST BUMP RISK" if fdm.mast_bump else ""]
@@ -656,7 +1121,7 @@ func _status_text() -> String:
 		s += "   |   TRAINING SPEED %d%% (Y)" % int(round(sim_speed * 100.0))
 	if phone.running:
 		var ps := []
-		for r in ["cyclic", "collective", "pedals"]:
+		for r in ["cyclic", "collective", "pedals", "all"]:
 			if phone.roles.has(r):
 				var eng: bool = controls.phone_engaged(r)
 				ps.append(r + (" IN CONTROL" if eng else " (waiting)"))
@@ -669,7 +1134,14 @@ func _status_text() -> String:
 func _save_settings() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("graphics", "preset", preset)
+	cf.set_value("graphics", "ultra_offered", true)
+	cf.set_value("graphics", "ios_safe", true)        # M2.22: iPhones saved on Ultra move back to High once
+	if world and world.hd_ground:
+		cf.set_value("graphics", "hd_ground", world.hd_ground.enabled)
 	cf.set_value("world", "visibility", visibility_m)
+	cf.set_value("world", "map", world.map_id if world else "valle")
+	if world:
+		cf.set_value("world", "season", world.season)
 	if fdm:
 		cf.set_value("aircraft", "mass", fdm.mass)
 		cf.set_value("weather", "wind_from", fdm.atmo.wind_from_deg)
@@ -691,6 +1163,10 @@ func _load_settings() -> void:
 	if cf.load(SETTINGS_PATH) != OK:
 		return
 	preset = cf.get_value("graphics", "preset", 1)
+	if OS.has_feature("web_ios") and not cf.has_section_key("graphics", "ios_safe"):
+		preset = mini(preset, 2) if cf.has_section_key("graphics", "ultra_offered") else 2
+	if world and world.hd_ground:
+		world.hd_ground.set_enabled(cf.get_value("graphics", "hd_ground", true))
 	visibility_m = cf.get_value("world", "visibility", 12000.0)
 	fdm.set_mass(cf.get_value("aircraft", "mass", fdm.mass))
 	fdm.atmo.wind_from_deg = cf.get_value("weather", "wind_from", 270.0)

@@ -2,3 +2,4 @@
 engine/
 *.tmp
 build/
+*.uid

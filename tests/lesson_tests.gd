@@ -224,6 +224,7 @@ var _k := 0
 func _initialize() -> void:
 	log_line("AB206 REALSIM training-level tests  %s" % Time.get_datetime_string_from_system())
 	main = load("res://scenes/main.tscn").instantiate()
+	main.map_override = "valle"      # always the training valley, whatever map you picked
 	root.add_child(main)
 
 func _process(_delta: float) -> bool:
@@ -294,6 +295,9 @@ func _run() -> void:
 
 	if only == "" or only == "mentor":
 		_mentor_tests()
+
+	if only == "" or only == "m2":
+		_mission2_tests()
 
 	log_line("\nRESULT: %d passed, %d failed" % [passed, failed])
 	var fa := FileAccess.open("user://lesson_test_results.txt", FileAccess.WRITE)
@@ -533,3 +537,126 @@ func _mentor_tests() -> void:
 		var r := _fly_mentor(ax, "good", 120.0)
 		check("H0 %s only: good student completes" % ax, r["done"] and r["takeovers"] == 0, "score %d, take-overs %d" % [r["score"], r["takeovers"]])
 		main.lessons.stop()
+
+
+# ------------------------------------------------------------ [L9] Mission 2 (FAM 02 + LIP 2)
+## A "trained pilot" robot for forward flight: pitch attitude for speed (PC), collective for the
+## vario (PG), pedals on the ball, lateral cyclic for wings level / heading 360.
+class CruiseBot:
+	var m
+	var lon := 0.0
+	var lat := 0.0
+	var coll := 0.0
+	var ped := 0.0
+	var lon_i := 0.0
+	var lat_i := 0.0
+	func _init(main_node) -> void:
+		m = main_node
+		var c = m.controls
+		lon = c.cyclic_lon
+		lat = c.cyclic_lat
+		coll = c.collective
+		ped = c.pedal
+		lon_i = lon
+		lat_i = lat
+	func targets() -> Array:
+		var L = m.lessons
+		if L.id == "m2_lip":
+			var leg: Array = L.M2_LEGS[L.phase]
+			return [leg[1], leg[2], NAN]
+		match L.phase:
+			1: return [80.0, NAN, float(L._sc["c0"]) + 0.05]
+			2: return [80.0, NAN, float(L._sc["c0"])]
+			3: return [95.0, 0.0, NAN]
+			4: return [60.0, 0.0, NAN]
+		return [80.0, 0.0, NAN]
+	func step(dt: float) -> void:
+		var f = m.fdm
+		var tg := targets()
+		var spd: float = tg[0]
+		var ias: float = f.ias_kt()
+		# speed -> pitch attitude -> longitudinal cyclic
+		var pitch_cmd := clampf(-1.0 - 0.35 * (spd - ias), -8.0, 7.0)
+		var pe: float = f.pitch_deg() - pitch_cmd
+		lon_i = clampf(lon_i + 0.012 * pe * dt, -1.0, 1.0)
+		lon = clampf(lon_i + 0.03 * pe + 0.25 * f.omega.y, -1.0, 1.0)
+		# heading 360 -> roll -> lateral cyclic
+		var he := wrapf(f.heading_deg(), -180.0, 180.0)
+		var roll_cmd := clampf(-0.6 * he, -8.0, 8.0)
+		var re: float = roll_cmd - f.roll_deg()
+		lat_i = clampf(lat_i + 0.01 * re * dt, -1.0, 1.0)
+		lat = clampf(lat_i + 0.025 * re - 0.2 * f.omega.x, -1.0, 1.0)
+		# vario -> collective (or a set collective step for the coordination exercise)
+		var old_coll := coll
+		if not is_nan(tg[2]):
+			coll = move_toward(coll, tg[2], 0.03 * dt)
+		else:
+			var vs_err: float = tg[1] - f.vs_fpm()
+			coll = clampf(coll + 0.06 * vs_err / 500.0 * dt - 0.0 * dt, 0.05, 0.9)
+		# pedals: with the collective (left pedal for PG up), then on the ball, yaw damping
+		ped = clampf(ped - 1.2 * (coll - old_coll) + 0.6 * float(m.ball_lagged) * dt - 0.02 * f.omega.z, -1.0, 1.0)
+		var c = m.controls
+		c.collective = coll
+		c.stick_mouse = Vector2(lat, lon)
+		c.pedal_trim = ped
+
+func _fly_m2(id: String, limit_s: float) -> Dictionary:
+	main.lessons.start(id)
+	var bot = null
+	var r = null
+	if id == "m2_des":
+		r = Robot.new(main)
+	else:
+		bot = CruiseBot.new(main)
+	var n := 0
+	var min_agl := 1e9
+	var finite := true
+	while not main.lessons.done and n * DT < limit_s:
+		if bot != null:
+			bot.step(DT)
+		tick(r)
+		n += 1
+		min_agl = minf(min_agl, main.fdm.agl)
+		if is_nan(main.fdm.pos.y):
+			finite = false
+			break
+		if n % 1200 == 0 and bot != null:
+			print("      t=%3.0f ph %d  ias %.0f vs %+.0f ball %+.3f hdg %03.0f roll %+.1f" % [n * DT, main.lessons.phase, main.fdm.ias_kt(), main.fdm.vs_fpm(), main.ball_lagged, main.fdm.heading_deg(), main.fdm.roll_deg()])
+	var L = main.lessons
+	log_line("    %s: done=%s score=%d time=%.0f s  min AGL %.0f m" % [id, L.done, L.score, n * DT, min_agl])
+	for ln in L.result.split("\n"):
+		log_line("      | " + ln)
+	return {"done": L.done, "score": L.score, "min_agl": min_agl, "finite": finite, "faults": main.coach.faults.duplicate()}
+
+func _mission2_tests() -> void:
+	log_line("\n[L9] Mission 2 (FAM 02 + LIP 2 briefings)")
+	# slip ball: right pedal at 80 kt -> nose right, ball to the LEFT ("step on the ball" = left pedal undoes it)
+	var L = main.lessons
+	L.start("m2_fam")
+	var c = main.controls
+	var ped0: float = c.pedal_trim
+	for i in 240:
+		tick(null)
+	var b0: float = main.ball_lagged
+	c.pedal_trim = ped0 + 0.12
+	var b1 := 0.0
+	for i in 1440:
+		tick(null)
+		if i % 120 == 0:
+			print("      t=%.1f ball %+.3f hdg %.1f roll %+.1f sideslip %+.1f" % [i * DT, main.ball_lagged, main.fdm.heading_deg(), main.fdm.roll_deg(), rad_to_deg(atan2(main.fdm.air_body.y, main.fdm.air_body.x))])
+		if i == 720:
+			b1 = main.ball_lagged
+	check("slip ball near centre in trimmed 80 kt flight", absf(b0) < 0.05, "ball %+.3f g" % b0)
+	check("right pedal moves the ball LEFT (step on the ball)", b1 < b0 - 0.01, "ball %+.3f -> %+.3f g" % [b0, b1])
+	L.stop()
+	check("French voice off again after the lesson", main.instructor.lang == "en" and not main.coach.quiet, main.instructor.lang)
+	for id in ([] if OS.get_environment("AB206_BALLONLY") != "" else ["m2_fam", "m2_lip", "m2_des"]):
+		var lim := 600.0 if id == "m2_lip" else 420.0
+		var r := _fly_m2(id, lim)
+		check(id + " completes", r["done"], "")
+		check(id + " good flying scores 70+", int(r["score"]) >= 70, "score %d" % r["score"])
+		check(id + " stays finite", r["finite"], "")
+		if id != "m2_des":
+			check(id + " stays well clear of the terrain", float(r["min_agl"]) > 120.0, "min %.0f m" % r["min_agl"])
+		main.lessons.stop()
+	check("Mission 2 group is listed first in the menu", main.lessons.GROUP_ORDER[0] == 3 and "MISSION 2" in str(main.lessons.GROUPS[3]), "")

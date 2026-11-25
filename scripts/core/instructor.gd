@@ -4,14 +4,20 @@ extends RefCounted
 ## Educational simulation only - always follow your instructor and the approved RFM.
 
 var enabled := true
-var voice := true                # spoken cues through the operating system's text-to-speech
+var voice := true                # spoken cues: Gemini neural WAV pack first, OS TTS fallback
 var message := ""
 var message_time := 0.0
 var last_key := ""
 var _cool := {}
 var _prev := {}
-var _voice_id := ""
-var _voice_checked := false
+var lang := "en"                 # voice language for spoken cues ("fr" in the French school briefings)
+var _voices := {}
+var voice_player: AudioStreamPlayer = null
+var _manifest_loaded := false
+var _exact_clips := {}           # normalized text -> filename
+var _prefix_clips := {}          # prefix -> filename
+var _clip_cache := {}            # filename -> AudioStreamWAV
+const VOICE_DIR := "res://data/voices/"
 
 func say(key: String, text: String, cooldown := 25.0, duration := 9.0, speech := "") -> bool:
 	if not enabled:
@@ -34,19 +40,71 @@ func force(text: String, speech := "") -> void:
 	if speech != "":
 		speak(speech)
 
-## Short spoken cue (Windows: SAPI voices via Godot's DisplayServer TTS). Silent when the
-## OS has no voice or the voice is switched off in the menu.
+static func _norm_speech(s: String) -> String:
+	var t := s.to_lower().replace("—", " ").replace("-", " ").replace(":", " ").replace("'", " ")
+	var parts := t.split(" ", false)
+	return " ".join(parts)
+
+func _load_manifest() -> void:
+	if _manifest_loaded:
+		return
+	_manifest_loaded = true
+	var mp := VOICE_DIR + "manifest.json"
+	if not FileAccess.file_exists(mp):
+		return
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(mp))
+	if parsed is Dictionary:
+		_exact_clips = parsed.get("exact", {})
+		_prefix_clips = parsed.get("prefix", {})
+
+func _find_clip(text: String) -> String:
+	_load_manifest()
+	var k := _norm_speech(text)
+	if _exact_clips.has(k):
+		return str(_exact_clips[k])
+	var low := text.to_lower()
+	for pref in _prefix_clips:
+		if low.begins_with(str(pref)):
+			return str(_prefix_clips[pref])
+	return ""
+
+func _play_clip(fname: String) -> bool:
+	if voice_player == null or not voice_player.is_inside_tree() or fname == "":
+		return false
+	var stream: AudioStreamWAV = _clip_cache.get(fname, null)
+	if stream == null:
+		var full := ProjectSettings.globalize_path(VOICE_DIR + fname)
+		if not FileAccess.file_exists(VOICE_DIR + fname) and not FileAccess.file_exists(full):
+			return false
+		stream = AudioStreamWAV.load_from_file(full if FileAccess.file_exists(full) else VOICE_DIR + fname)
+		if stream == null:
+			return false
+		_clip_cache[fname] = stream
+	DisplayServer.tts_stop()
+	voice_player.stop()
+	voice_player.stream = stream
+	voice_player.play()
+	return true
+
+## Short spoken cue: uses pre-recorded Gemini neural WAV clip when available,
+## otherwise falls back to Windows SAPI voices via Godot's DisplayServer TTS.
 func speak(text: String) -> void:
 	if not voice or not enabled or DisplayServer.get_name() == "headless":
 		return
-	if not _voice_checked:
-		_voice_checked = true
-		var v := DisplayServer.tts_get_voices_for_language("en")
-		if v.size() > 0:
-			_voice_id = v[0]
-	if _voice_id == "":
+	var clip := _find_clip(text)
+	if clip != "" and _play_clip(clip):
 		return
-	DisplayServer.tts_speak(text, _voice_id, 70, 1.0, 1.1, 0, true)
+	if voice_player != null:
+		voice_player.stop()
+	if not _voices.has(lang):
+		var v := DisplayServer.tts_get_voices_for_language(lang)
+		if v.size() == 0:
+			v = DisplayServer.tts_get_voices_for_language("en")
+		_voices[lang] = v[0] if v.size() > 0 else ""
+	var vid: String = _voices[lang]
+	if vid == "":
+		return
+	DisplayServer.tts_speak(text, vid, 70, 1.0, 1.1, 0, true)
 
 func update(fdm, dt: float) -> void:
 	message_time = maxf(message_time - dt, 0.0)

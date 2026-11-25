@@ -1,0 +1,1710 @@
+{
+ "_about": "Checklists used by the simulator. 'auto' items tick themselves when the cockpit really is in that state (scripts/core/checklist.gd); the others you confirm (Enter or click). Normal procedures and limits: Bell BHT-206B3-FM-1 flight manual. Emergencies: the student's AgustaBell AB206 manual E-AB206-250-1 Section 3. Quick cards: training website helicopter.daviesgarden.com. Always use your school's checklist and the flight manual of your aircraft.",
+ "lists": [
+  {
+   "id": "preflight",
+   "title": "PREFLIGHT - EXTERIOR AND INTERIOR CHECK",
+   "kind": "normal",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 Normal Procedures (Rev. 8, 6 Oct 2000) (condensed)",
+   "items": [
+    {
+     "heading": "Before exterior check"
+    },
+    {
+     "item": "Flight planning",
+     "action": "Completed",
+     "confirm": true
+    },
+    {
+     "item": "Publications",
+     "action": "Check",
+     "confirm": true
+    },
+    {
+     "item": "Helicopter",
+     "action": "Serviced as required",
+     "confirm": true
+    },
+    {
+     "item": "Battery",
+     "action": "Connected",
+     "confirm": true
+    },
+    {
+     "heading": "1. Fuselage - cabin right side"
+    },
+    {
+     "item": "Right static port",
+     "action": "Condition",
+     "confirm": true
+    },
+    {
+     "item": "Cabin doors and windows",
+     "action": "Condition and security",
+     "confirm": true
+    },
+    {
+     "item": "Landing gear",
+     "action": "Condition, ground handling wheels removed",
+     "confirm": true
+    },
+    {
+     "heading": "2. Fuselage - centre right side"
+    },
+    {
+     "item": "Cabin roof, transmission fairing, engine air inlet",
+     "action": "Clean of debris, snow and ice",
+     "confirm": true
+    },
+    {
+     "item": "Hydraulic reservoir",
+     "action": "Oil level; filter bypass indicator retracted",
+     "confirm": true
+    },
+    {
+     "item": "Hydraulic actuators and lines",
+     "action": "Condition, security, no leaks",
+     "confirm": true
+    },
+    {
+     "item": "Transmission area",
+     "action": "Driveshaft coupling and temp-plates, oil level, mounts, isolation mount, drag pin",
+     "confirm": true
+    },
+    {
+     "item": "Engine inlet and plenum",
+     "action": "Condition, clear of obstructions",
+     "confirm": true
+    },
+    {
+     "item": "Fuel filler cap",
+     "action": "Check level visually, cap secure",
+     "confirm": true
+    },
+    {
+     "item": "Fuel sump",
+     "action": "Drain a fuel sample",
+     "confirm": true
+    },
+    {
+     "item": "Power plant area",
+     "action": "Engine, mounts, throttle linkage, fuel control, hoses, exhaust, cowl secure",
+     "confirm": true
+    },
+    {
+     "item": "Right exhaust cover",
+     "action": "Removed",
+     "confirm": true
+    },
+    {
+     "item": "Engine oil tank",
+     "action": "Level (dipstick), leaks, cap secure",
+     "confirm": true
+    },
+    {
+     "heading": "3. Fuselage - aft right side"
+    },
+    {
+     "item": "Tailboom, driveshaft cover, horizontal stabiliser",
+     "action": "Condition and security",
+     "confirm": true
+    },
+    {
+     "item": "Main rotor blade",
+     "action": "Condition",
+     "confirm": true
+    },
+    {
+     "heading": "4. Fuselage - full aft"
+    },
+    {
+     "item": "Vertical fin, tail rotor guard, lights",
+     "action": "Condition",
+     "confirm": true
+    },
+    {
+     "item": "Tail rotor gearbox",
+     "action": "Oil level, leaks, security",
+     "confirm": true
+    },
+    {
+     "item": "Tail rotor",
+     "action": "Tie-down removed, condition, free movement; blades and tip blocks",
+     "confirm": true
+    },
+    {
+     "heading": "5. Fuselage - aft left side"
+    },
+    {
+     "item": "Main rotor blade",
+     "action": "Tie-down REMOVED (failure to remove it before start can cause severe damage)",
+     "confirm": true
+    },
+    {
+     "item": "Tailboom, driveshaft cover, stabiliser, fuselage",
+     "action": "Condition",
+     "confirm": true
+    },
+    {
+     "item": "Baggage compartment",
+     "action": "Cargo tied down, door secure",
+     "confirm": true
+    },
+    {
+     "item": "Oil cooler, blower and access door",
+     "action": "Condition, clear, secured",
+     "confirm": true
+    },
+    {
+     "item": "Left exhaust cover",
+     "action": "Removed",
+     "confirm": true
+    },
+    {
+     "heading": "6. Fuselage - cabin left side"
+    },
+    {
+     "item": "Rotor head",
+     "action": "Reservoir oil levels, hub and yoke, pitch horns, pitch links, swashplate, control linkages",
+     "confirm": true
+    },
+    {
+     "item": "Cabin doors, windows, landing gear, left static port",
+     "action": "Condition",
+     "confirm": true
+    },
+    {
+     "heading": "7. Fuselage - front"
+    },
+    {
+     "item": "Windshield",
+     "action": "Condition and cleanliness",
+     "confirm": true
+    },
+    {
+     "item": "Battery door, external power door",
+     "action": "Secured",
+     "confirm": true
+    },
+    {
+     "item": "Pitot tube",
+     "action": "Cover removed, clear",
+     "confirm": true
+    },
+    {
+     "item": "Landing light glass, antennas",
+     "action": "Condition",
+     "confirm": true
+    },
+    {
+     "heading": "Interior check"
+    },
+    {
+     "item": "Cabin interior",
+     "action": "Clean, equipment secure",
+     "confirm": true
+    },
+    {
+     "item": "Fire extinguisher, first aid kit",
+     "action": "Secure",
+     "confirm": true
+    },
+    {
+     "item": "Copilot controls / seat belt",
+     "action": "Secure (if solo: seat belt secured)",
+     "confirm": true
+    },
+    {
+     "item": "Cabin loading",
+     "action": "Within limits",
+     "confirm": true
+    },
+    {
+     "item": "Cabin doors",
+     "action": "Secured",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "prestart",
+   "title": "ENGINE PRESTART CHECK",
+   "kind": "normal",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 Normal Procedures (Rev. 8, 6 Oct 2000)",
+   "items": [
+    {
+     "item": "Flight controls",
+     "action": "Release friction; check freedom of movement; neutral / flat pitch, pedals neutral",
+     "auto": "controls_checked",
+     "note": "Move the cyclic, collective and pedals through their full travel (frictions OFF, J panel)."
+    },
+    {
+     "item": "Throttle",
+     "action": "Check full travel and flight idle stop; return to CLOSED",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "LDG LTS switch",
+     "action": "OFF",
+     "auto": "landing_light_off"
+    },
+    {
+     "item": "ENGINE ANTI-ICING switch",
+     "action": "OFF",
+     "auto": "anti_ice_off"
+    },
+    {
+     "item": "HYDRAULIC SYSTEM switch",
+     "action": "ON",
+     "auto": "hyd_on"
+    },
+    {
+     "item": "FUEL VALVE switch",
+     "action": "ON, guard closed",
+     "auto": "fuel_valve_on"
+    },
+    {
+     "item": "Altimeter",
+     "action": "Set to field elevation",
+     "confirm": true
+    },
+    {
+     "item": "Instruments / gauges",
+     "action": "Static position at zero",
+     "auto": "instruments_static"
+    },
+    {
+     "item": "Overhead switches",
+     "action": "OFF",
+     "confirm": true
+    },
+    {
+     "item": "GEN switch",
+     "action": "OFF",
+     "auto": "generator_off"
+    },
+    {
+     "item": "Circuit breakers",
+     "action": "In (as required)",
+     "auto": "cbs_in",
+     "note": "Overhead console (O key). The FUEL BOOST breakers are pushed in at their own item below."
+    },
+    {
+     "item": "BAT switch",
+     "action": "ON (battery start)",
+     "auto": "battery_on"
+    },
+    {
+     "item": "Warning / caution lights",
+     "action": "TRANS OIL PRESS, ENG OUT and ROTOR LOW RPM illuminated",
+     "auto": "start_cautions_on"
+    },
+    {
+     "item": "WRN HORN MUTE button (if installed)",
+     "action": "Press to mute",
+     "confirm": true
+    },
+    {
+     "item": "CAUTION LT TEST button",
+     "action": "Press: every segment lights",
+     "auto": "caution_tested"
+    },
+    {
+     "item": "TOT LT TEST (if installed)",
+     "action": "Press, check TOT light",
+     "confirm": true
+    },
+    {
+     "item": "ROTOR LOW RPM system",
+     "action": "Collective up: light + horn ON; collective full down: light ON, horn OFF",
+     "auto": "rpm_horn_check"
+    },
+    {
+     "item": "Flight controls",
+     "action": "Neutral / flat pitch, apply friction (if needed)",
+     "auto": "collective_down"
+    },
+    {
+     "item": "FUEL BOOST AFT and FWD",
+     "action": "Circuit breakers in; fuel pressure in limits, FUEL PUMP light OFF",
+     "auto": "boost_pressure",
+     "note": "Boost pumps shall be ON for all normal operations (Section 1). The 206B-3 has no boost switch: the pumps run when these two breakers are in and the bus is powered."
+    },
+    {
+     "item": "ANTI COLL LT switch",
+     "action": "ON (if required)",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "start",
+   "title": "ENGINE STARTING",
+   "kind": "normal",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 Normal Procedures (Rev. 8, 6 Oct 2000)",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Full down",
+     "auto": "collective_down"
+    },
+    {
+     "item": "Throttle",
+     "action": "Full closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Rotors",
+     "action": "Clear",
+     "confirm": true
+    },
+    {
+     "item": "Starter",
+     "action": "Engage (observe starter limits: battery 40 s ON / 60 s OFF, 40 / 60, 40 s ON then 30 min OFF)",
+     "auto": "starter_on"
+    },
+    {
+     "item": "Engine oil pressure",
+     "action": "Indication of increase",
+     "auto": "oil_rising"
+    },
+    {
+     "item": "Throttle",
+     "action": "Open to flight idle at 15% N1 with TOT at or below 150 C",
+     "auto": "fuel_introduced",
+     "note": "N1 for the light-off: 15% above 7 C, 13% from -18 to +7 C, 12% below -18 C. Never start below 12% N1."
+    },
+    {
+     "item": "TOT",
+     "action": "Monitor to avoid a hot start; abort if 927 C or 810-927 C for 10 s is about to be exceeded",
+     "auto": "tot_start_ok",
+     "note": "ABORT: press IDLE REL, CLOSE the throttle and keep motoring with the starter until TOT is below 810 C."
+    },
+    {
+     "item": "Main rotor",
+     "action": "Turning by 25% N1 (if not: ABORT the start)",
+     "auto": "rotor_turning"
+    },
+    {
+     "item": "Starter",
+     "action": "Release at 58% N1",
+     "auto": "starter_released"
+    },
+    {
+     "item": "Engine and transmission oil",
+     "action": "Pressures increasing",
+     "auto": "oils_rising"
+    },
+    {
+     "item": "Idle",
+     "action": "If shut down more than 15 minutes: stabilise at idle for one minute before increasing power",
+     "auto": "idle_1min"
+    },
+    {
+     "item": "Gas producer (N1)",
+     "action": "Check 60 to 62%",
+     "auto": "n1_idle_check"
+    },
+    {
+     "item": "External power",
+     "action": "Disconnect; BAT on",
+     "auto": "battery_on"
+    },
+    {
+     "item": "Throttle",
+     "action": "Open to 70% gas producer RPM",
+     "auto": "n1_70"
+    },
+    {
+     "item": "GEN switch",
+     "action": "ON",
+     "auto": "generator_on"
+    },
+    {
+     "item": "Radio equipment",
+     "action": "ON (switch only: no radio simulation yet)",
+     "auto": "radios_on"
+    },
+    {
+     "item": "ELT (if installed)",
+     "action": "Check for inadvertent transmission",
+     "confirm": true
+    },
+    {
+     "item": "POS LT switch",
+     "action": "ON",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "runup",
+   "title": "PRELIMINARY HYDRAULICS CHECK + ENGINE RUN-UP",
+   "kind": "normal",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 Normal Procedures (Rev. 8, 6 Oct 2000)",
+   "items": [
+    {
+     "heading": "Preliminary hydraulics check"
+    },
+    {
+     "item": "HYDRAULIC SYSTEM switch",
+     "action": "OFF, then ON (no uncommanded control movement)",
+     "auto": "hyd_cycled"
+    },
+    {
+     "heading": "Engine run-up"
+    },
+    {
+     "item": "Throttle",
+     "action": "Smoothly and firmly advance at a continuous rate to FULL OPEN, collective down, cyclic neutral",
+     "auto": "throttle_full",
+     "note": "Rotor 50-60%: accelerate through this range as rapidly as practical (Section 1)."
+    },
+    {
+     "item": "Power turbine (N2) governor",
+     "action": "Check range 97 to 100% (beep [ and ])",
+     "auto": "gov_range_checked"
+    },
+    {
+     "item": "ENGINE ANTI-ICING switch",
+     "action": "ON if OAT 4.4 C or below with visible moisture (observe TOT rise)",
+     "auto": "anti_ice_as_required"
+    },
+    {
+     "item": "PITOT HEAT (if installed)",
+     "action": "ON in visible moisture below 4.4 C",
+     "confirm": true
+    },
+    {
+     "heading": "Hydraulics check"
+    },
+    {
+     "item": "Collective",
+     "action": "Full down, friction removed",
+     "auto": "collective_down_free"
+    },
+    {
+     "item": "Rotor RPM (NR)",
+     "action": "Set to 100%",
+     "auto": "nr_100"
+    },
+    {
+     "item": "HYDRAULIC SYSTEM switch",
+     "action": "OFF",
+     "auto": "hyd_off"
+    },
+    {
+     "item": "Cyclic",
+     "action": "Centred, friction removed; move in an X pattern (about 1 inch), centre",
+     "auto": "cyc_x_hyd_off"
+    },
+    {
+     "item": "Collective",
+     "action": "Raise slightly (1-2 inches) 2-3 times, back to full down; check normal operation",
+     "confirm": true
+    },
+    {
+     "item": "Pedals",
+     "action": "Displace slightly left and right; note the higher force",
+     "confirm": true
+    },
+    {
+     "item": "HYDRAULIC SYSTEM switch",
+     "action": "ON",
+     "auto": "hyd_on"
+    },
+    {
+     "item": "Cyclic and collective friction",
+     "action": "Set as desired",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "before_takeoff",
+   "title": "BEFORE TAKEOFF",
+   "kind": "normal",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 Normal Procedures (Rev. 8, 6 Oct 2000)",
+   "items": [
+    {
+     "item": "Electrical equipment",
+     "action": "Check; reset as required",
+     "confirm": true
+    },
+    {
+     "item": "Lighting",
+     "action": "As desired",
+     "confirm": true
+    },
+    {
+     "item": "Radio",
+     "action": "Check as required",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Full open",
+     "auto": "throttle_full"
+    },
+    {
+     "item": "Power and flight instruments",
+     "action": "Normal operating range, no caution lights",
+     "auto": "instruments_normal"
+    },
+    {
+     "item": "Generator load",
+     "action": "Below 70% (normal 10-20%)",
+     "confirm": true
+    },
+    {
+     "item": "Power turbine N2",
+     "action": "Set for 100% in flat pitch",
+     "auto": "nr_100"
+    }
+   ]
+  },
+  {
+   "id": "shutdown",
+   "title": "ENGINE SHUTDOWN",
+   "kind": "normal",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 Normal Procedures (Rev. 8, 6 Oct 2000)",
+   "items": [
+    {
+     "item": "Throttle",
+     "action": "Flight idle; check engine deceleration time (full rpm to 65% N1 in 3-5 s)",
+     "auto": "throttle_idle"
+    },
+    {
+     "item": "WRN HORN MUTE (if installed)",
+     "action": "Press to mute",
+     "confirm": true
+    },
+    {
+     "item": "Flight controls",
+     "action": "Position for shutdown; apply friction",
+     "auto": "friction_on"
+    },
+    {
+     "item": "ENGINE ANTI-ICING switch",
+     "action": "OFF",
+     "auto": "anti_ice_off"
+    },
+    {
+     "item": "TOT",
+     "action": "Stabilised at flight idle for two minutes",
+     "auto": "idle_2min"
+    },
+    {
+     "item": "ELT (if installed)",
+     "action": "Check for inadvertent transmission",
+     "confirm": true
+    },
+    {
+     "item": "IDLE REL button",
+     "action": "Depress and roll the throttle firmly to FULL CLOSED; hold it closed until N1 is 0 and TOT stabilising",
+     "auto": "throttle_closed",
+     "note": "Hold F at the idle stop for about half a second = idle release."
+    },
+    {
+     "item": "TOT",
+     "action": "Check decreasing",
+     "auto": "tot_reducing"
+    },
+    {
+     "item": "Rotor coast-down",
+     "action": "Apply cyclic to minimise static-stop contact",
+     "confirm": true
+    },
+    {
+     "item": "Radio equipment",
+     "action": "OFF",
+     "auto": "radios_off"
+    },
+    {
+     "item": "FUEL VALVE switch",
+     "action": "OFF",
+     "auto": "fuel_valve_off",
+     "note": "Aircraft with the fuel shutoff valve thermal-relief provision (Bell Alert Service Bulletin 206-82-18): leave the FUEL VALVE ON. Follow your aircraft's manual."
+    },
+    {
+     "item": "GEN switch",
+     "action": "OFF",
+     "auto": "generator_off"
+    },
+    {
+     "item": "All switches except BAT",
+     "action": "OFF",
+     "auto": "all_but_bat_off"
+    },
+    {
+     "item": "BAT switch",
+     "action": "OFF after N1 is zero and TOT stabilised",
+     "auto": "battery_off_safe"
+    },
+    {
+     "item": "Pilot",
+     "action": "Remain at the flight controls until the rotor has stopped",
+     "auto": "rotor_stopped"
+    },
+    {
+     "heading": "After exiting the helicopter"
+    },
+    {
+     "item": "Main and tail rotor tie-downs",
+     "action": "Install (high or gusty winds, other helicopters operating, or left unattended)",
+     "confirm": true
+    },
+    {
+     "item": "Protective covers",
+     "action": "Install (engine inlet, exhaust, pitot tube)",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "web_start",
+   "title": "QUICK CARD (website) - ENGINE START",
+   "kind": "normal",
+   "source": "Bell 206 checklist, helicopter.daviesgarden.com/checklist.html (training website, not the official RFM)",
+   "items": [
+    {
+     "item": "Seat belts",
+     "action": "On",
+     "confirm": true
+    },
+    {
+     "item": "Flight controls",
+     "action": "Free and correct",
+     "auto": "controls_checked",
+     "note": "Move cyclic, collective and pedals through their full travel."
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Landing light",
+     "action": "Off",
+     "auto": "landing_light_off"
+    },
+    {
+     "item": "Engine anti-ice",
+     "action": "Off",
+     "auto": "anti_ice_off"
+    },
+    {
+     "item": "Hydraulics",
+     "action": "On",
+     "auto": "hyd_on"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "On, guard in place",
+     "auto": "fuel_valve_on"
+    },
+    {
+     "item": "Altimeter",
+     "action": "Set",
+     "confirm": true
+    },
+    {
+     "item": "Instruments",
+     "action": "Static at zero",
+     "auto": "instruments_static"
+    },
+    {
+     "item": "Battery",
+     "action": "On",
+     "auto": "battery_on"
+    },
+    {
+     "item": "Caution lights",
+     "action": "ENG OUT, TRANS OIL PRESS, LOW ROTOR RPM on",
+     "auto": "start_cautions_on"
+    },
+    {
+     "item": "Caution lights",
+     "action": "Press to test",
+     "auto": "caution_tested"
+    },
+    {
+     "item": "Fuel quantity",
+     "action": "Check",
+     "confirm": true
+    },
+    {
+     "item": "Collective",
+     "action": "Down",
+     "auto": "collective_down"
+    },
+    {
+     "item": "Rotors",
+     "action": "Clear",
+     "confirm": true
+    },
+    {
+     "item": "Fuel boost",
+     "action": "On, fuel pressure",
+     "auto": "boost_pressure"
+    },
+    {
+     "item": "TOT",
+     "action": "150 C or below",
+     "auto": "tot_150"
+    },
+    {
+     "item": "Starter",
+     "action": "Engage",
+     "auto": "starter_on"
+    },
+    {
+     "item": "N1 15% (above 7 C) / 13% (-18 to +7 C) / 12% (below -18 C)",
+     "action": "Introduce fuel: throttle snap to the idle stop",
+     "auto": "fuel_introduced",
+     "note": "The website lists this line as 'TOT - snap to idle stop'; it is the throttle that snaps to the idle stop."
+    },
+    {
+     "item": "TOT",
+     "action": "Do not exceed 1 second over 927 C",
+     "auto": "tot_start_ok"
+    },
+    {
+     "item": "Main rotor",
+     "action": "Turning by 25% N1",
+     "auto": "rotor_turning"
+    },
+    {
+     "item": "Oil pressure",
+     "action": "Increasing",
+     "auto": "oil_rising"
+    },
+    {
+     "item": "Starter",
+     "action": "Release at 58% N1",
+     "auto": "starter_released"
+    },
+    {
+     "item": "Throttle",
+     "action": "Increase past idle release",
+     "auto": "throttle_past_idle"
+    },
+    {
+     "item": "Engine instruments",
+     "action": "Check",
+     "confirm": true
+    },
+    {
+     "item": "Stabilise at idle",
+     "action": "One minute before increasing power",
+     "auto": "idle_1min"
+    },
+    {
+     "item": "Throttle",
+     "action": "Open to 70% gas producer (N1)",
+     "auto": "n1_70"
+    },
+    {
+     "item": "Generator",
+     "action": "On",
+     "auto": "generator_on"
+    },
+    {
+     "item": "Radios and lights",
+     "action": "On",
+     "auto": "radios_on"
+    }
+   ]
+  },
+  {
+   "id": "web_runup",
+   "title": "QUICK CARD (website) - ENGINE RUN-UP",
+   "kind": "normal",
+   "source": "Bell 206 checklist, helicopter.daviesgarden.com/checklist.html (training website, not the official RFM)",
+   "items": [
+    {
+     "item": "Throttle",
+     "action": "Increase to full, keeping torque below 40%",
+     "auto": "throttle_full"
+    },
+    {
+     "item": "Governor RPM",
+     "action": "Check range 97-100%, set at 100%",
+     "auto": "gov_100"
+    },
+    {
+     "item": "Radio / Nav",
+     "action": "On, listen to ATIS",
+     "auto": "radios_on",
+     "note": "No radio simulation yet: switch only."
+    },
+    {
+     "item": "Hydraulics",
+     "action": "Check (OFF, feel the controls, ON)",
+     "auto": "hyd_checked"
+    },
+    {
+     "item": "Engine anti-ice",
+     "action": "If OAT below 4 C with visible moisture: ON",
+     "auto": "anti_ice_as_required"
+    },
+    {
+     "item": "Frictions",
+     "action": "Off",
+     "auto": "friction_off"
+    }
+   ]
+  },
+  {
+   "id": "web_shutdown",
+   "title": "QUICK CARD (website) - ENGINE SHUTDOWN",
+   "kind": "normal",
+   "source": "Bell 206 checklist, helicopter.daviesgarden.com/checklist.html (training website, not the official RFM)",
+   "items": [
+    {
+     "item": "Throttle",
+     "action": "Reduce to idle, stabilise for 2 minutes",
+     "auto": "idle_2min"
+    },
+    {
+     "item": "Frictions",
+     "action": "On",
+     "auto": "friction_on"
+    },
+    {
+     "item": "Radios and lights",
+     "action": "Off",
+     "auto": "radios_lights_off"
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "TOT",
+     "action": "Reducing",
+     "auto": "tot_reducing"
+    },
+    {
+     "item": "Gas producer (N1)",
+     "action": "Reducing",
+     "auto": "n1_reducing"
+    },
+    {
+     "item": "Caution light",
+     "action": "ENG OUT illuminated",
+     "auto": "eng_out_on"
+    },
+    {
+     "item": "Generator",
+     "action": "Off",
+     "auto": "generator_off"
+    },
+    {
+     "item": "Fuel boost",
+     "action": "Off (FUEL BOOST breakers out on the 206B-3)",
+     "auto": "boost_off"
+    },
+    {
+     "item": "Battery",
+     "action": "Off",
+     "auto": "battery_off"
+    },
+    {
+     "item": "Blades",
+     "action": "Tie down",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "e_hover",
+   "title": "ENGINE FAILURE - TAKE-OFF OR HOVER (skids below 8 ft)",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Maintain as the helicopter settles (do NOT raise it early)",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Landing",
+     "action": "Accomplish an autorotational descent and landing",
+     "auto": "landed"
+    },
+    {
+     "item": "BATT switch",
+     "action": "OFF",
+     "auto": "battery_off"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    }
+   ],
+   "note": "Do not restart the engine until the cause of the failure has been found and corrected."
+  },
+  {
+   "id": "e_low",
+   "title": "ENGINE FAILURE - LOW ALTITUDE, LOW AIRSPEED (skids above 8 ft)",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Adjust to keep rotor RPM in limits, establish the autorotation glide",
+     "auto": "nr_in_limits"
+    },
+    {
+     "item": "Airspeed",
+     "action": "If below 43 KIAS and height permits, forward cyclic to about 43 KIAS (code G)",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Land",
+     "action": "Accomplish; touch down level, ground speed as low as possible",
+     "auto": "landed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "BATT switch",
+     "action": "OFF",
+     "auto": "battery_off"
+    }
+   ],
+   "note": "If time and height permit before touchdown: BATT OFF, fuel OFF, shoulder harness LOCK."
+  },
+  {
+   "id": "e_high",
+   "title": "ENGINE FAILURE - LOW ALTITUDE, HIGH AIRSPEED (100 kt or more)",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Cyclic",
+     "action": "Aft: speed-reduction climb, collective to keep rotor RPM in the red lines, climb until 50-60 kt",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Autorotational landing",
+     "action": "Accomplish",
+     "auto": "landed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "Battery switch",
+     "action": "OFF",
+     "auto": "battery_off"
+    }
+   ]
+  },
+  {
+   "id": "e_flight",
+   "title": "ENGINE FAILURE - IN FLIGHT",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Full down at once, keep rotor RPM in limits, establish the autorotation glide",
+     "auto": "nr_in_limits"
+    },
+    {
+     "item": "Pedals",
+     "action": "Right pedal to trim",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Land",
+     "action": "Accomplish (best glide 71 KIAS, minimum descent 42 KIAS, max 100 kt in autorotation)",
+     "auto": "landed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "BATT switch",
+     "action": "OFF",
+     "auto": "battery_off"
+    }
+   ],
+   "note": "Never raise the collective to stretch the glide: it costs rotor RPM you need for the touchdown."
+  },
+  {
+   "id": "e_restart",
+   "title": "ENGINE RESTART IN FLIGHT",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Autorotational glide",
+     "action": "Establish",
+     "auto": "nr_in_limits"
+    },
+    {
+     "item": "Forced landing area",
+     "action": "Select",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "ON",
+     "auto": "fuel_valve_on"
+    },
+    {
+     "item": "Engine start",
+     "action": "Attempt",
+     "auto": "starter_on"
+    },
+    {
+     "item": "Throttle",
+     "action": "Open slowly to full open after the start",
+     "auto": "throttle_full"
+    }
+   ],
+   "note": "Do NOT attempt a restart when the cause is obviously mechanical. About one minute to regain powered flight."
+  },
+  {
+   "id": "e_shutdown",
+   "title": "EMERGENCY ENGINE SHUTDOWN",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "BATT switch",
+     "action": "OFF",
+     "auto": "battery_off"
+    }
+   ]
+  },
+  {
+   "id": "e_overspeed",
+   "title": "ENGINE OVERSPEED",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Increase to load the rotor and keep engine RPM below the maximum",
+     "confirm": true
+    },
+    {
+     "item": "Throttle",
+     "action": "Reduce until normal operating RPM",
+     "confirm": true
+    },
+    {
+     "item": "Land",
+     "action": "Power-on approach with manual throttle; if RPM cannot be controlled: throttle closed over a safe area, collective down, autorotate",
+     "confirm": true
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "BAT switch",
+     "action": "OFF",
+     "auto": "battery_off"
+    }
+   ]
+  },
+  {
+   "id": "e_underspeed",
+   "title": "ENGINE UNDERSPEED",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Down, establish the autorotation glide",
+     "auto": "nr_in_limits"
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Land",
+     "action": "Autorotational descent and landing",
+     "auto": "landed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "BAT switch",
+     "action": "OFF (before touchdown if time permits)",
+     "auto": "battery_off"
+    }
+   ]
+  },
+  {
+   "id": "e_surges",
+   "title": "ENGINE SURGES",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "GOV INCR switch",
+     "action": "INCR for maximum RPM",
+     "auto": "gov_100"
+    },
+    {
+     "item": "Throttle",
+     "action": "Reduce: N2 98% (code G)",
+     "confirm": true
+    },
+    {
+     "item": "Land immediately",
+     "action": "Power-on approach and landing without delay",
+     "confirm": true
+    },
+    {
+     "item": "If not controlled",
+     "action": "Collective down, throttle closed, autorotate, fuel OFF, BAT OFF",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "e_stall",
+   "title": "ENGINE COMPRESSOR STALL",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Power",
+     "action": "Reduce",
+     "confirm": true
+    },
+    {
+     "item": "De-ice switch",
+     "action": "OFF",
+     "auto": "anti_ice_off"
+    },
+    {
+     "item": "Heating switch",
+     "action": "OFF",
+     "confirm": true
+    }
+   ],
+   "note": "If that does not stop it: land and investigate."
+  },
+  {
+   "id": "e_drive",
+   "title": "MAIN DRIVE SHAFT FAILURE",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Collective pitch",
+     "action": "Down, establish the autorotation glide",
+     "auto": "nr_in_limits"
+    },
+    {
+     "item": "Throttle",
+     "action": "Open or adjust to keep engine RPM at or below the limit (the engine must run for tail rotor control)",
+     "confirm": true
+    },
+    {
+     "item": "Land",
+     "action": "Autorotational descent and landing",
+     "auto": "landed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    }
+   ]
+  },
+  {
+   "id": "e_tailrotor",
+   "title": "TAIL ROTOR MALFUNCTIONS (summary)",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Low airspeed",
+     "action": "Reduce power",
+     "confirm": true
+    },
+    {
+     "item": "Cruise 60 kt or more",
+     "action": "Controlled flight may be kept (streamlining)",
+     "confirm": true
+    },
+    {
+     "item": "Fixed pedal",
+     "action": "Shallow approach 5-8 deg at about 60 kt, slow deceleration from 50-75 ft, use throttle and collective for alignment",
+     "confirm": true
+    },
+    {
+     "item": "Loss of components in hover",
+     "action": "Reduce power at once, hovering autorotation (rotation expected)",
+     "confirm": true
+    },
+    {
+     "item": "Loss of components in flight",
+     "action": "Reduce throttle and pitch at once, glide slightly above normal autorotation speed",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "e_oil",
+   "title": "ENGINE / XMSN OIL PRESSURE OR TEMPERATURE",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Indication",
+     "action": "Oil pressure drop, XMSN OIL PRESS or XMSN OIL HOT light, high engine oil temperature",
+     "confirm": true
+    },
+    {
+     "item": "Land",
+     "action": "Normal landing at the nearest safe area",
+     "confirm": true
+    }
+   ],
+   "note": "Do not continue until the cause is found and corrected. ENG CHIP DET light: power-on approach and land immediately."
+  },
+  {
+   "id": "e_fire_start",
+   "title": "ENGINE FIRE DURING START (internal / hot start)",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Starter",
+     "action": "Keep pressing (motor the engine)",
+     "auto": "starter_on"
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "TOT",
+     "action": "When back to normal: complete the shutdown, record the limit and duration of the hot start",
+     "auto": "tot_reducing"
+    }
+   ],
+   "note": "External fire: close throttle, complete shutdown, exit, use the extinguisher."
+  },
+  {
+   "id": "e_fire_flight",
+   "title": "ENGINE FIRE IN FLIGHT",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Forced landing area",
+     "action": "Select (time permitting)",
+     "confirm": true
+    },
+    {
+     "item": "Autorotational glide",
+     "action": "Establish, prepare for a power-off landing",
+     "auto": "nr_in_limits"
+    },
+    {
+     "item": "Throttle",
+     "action": "Closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "Battery switch",
+     "action": "OFF (leave ON if lights / avionics are needed)",
+     "auto": "battery_off"
+    },
+    {
+     "item": "Fuel valve",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "Shoulder harness",
+     "action": "Lock",
+     "confirm": true
+    },
+    {
+     "item": "Landing",
+     "action": "Accomplish",
+     "auto": "landed"
+    }
+   ]
+  },
+  {
+   "id": "e_elec_fire",
+   "title": "ELECTRICAL FIRE / FUSELAGE FIRE / SMOKE",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Battery and generator switches",
+     "action": "OFF",
+     "auto": "elec_off"
+    },
+    {
+     "item": "Land",
+     "action": "As soon as possible",
+     "confirm": true
+    },
+    {
+     "item": "Smoke",
+     "action": "Cabin heat OFF, vents open",
+     "confirm": true
+    }
+   ],
+   "note": "The helicopter can stay airborne with battery and generator OFF."
+  },
+  {
+   "id": "e_fuel",
+   "title": "FUEL SYSTEM / FUEL PUMP CAUTION",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "FUEL PUMP light",
+     "action": "Engine runs without boost pressure below 6000 ft (codes A-G); one pump is enough",
+     "confirm": true
+    },
+    {
+     "item": "Unusable fuel",
+     "action": "With one or both boost pumps inoperative: 10 US gal",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "e_elec",
+   "title": "ELECTRICAL POWER FAILURE (GEN FAIL)",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Generator field circuit breaker",
+     "action": "Check IN",
+     "auto": "cb_genfield_in"
+    },
+    {
+     "item": "Generator switch",
+     "action": "CYCLE; if power not restored: OFF",
+     "confirm": true
+    },
+    {
+     "item": "Electrical equipment",
+     "action": "OFF except as needed",
+     "confirm": true
+    },
+    {
+     "item": "Landing",
+     "action": "As soon as practical",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "e_caution",
+   "title": "CAUTION LIGHT ILLUMINATION",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "ENG / XMSN / T/R chip, ENG OIL BYPASS, 20 MIN FUEL, HYD PRESS, FUEL FILTER",
+     "action": "Normal landing at the nearest safe area",
+     "confirm": true
+    }
+   ],
+   "note": "Do not continue flight until the cause is found and corrected."
+  },
+  {
+   "id": "e_hyd",
+   "title": "HYDRAULIC SYSTEM FAILURE",
+   "kind": "emergency",
+   "source": "AgustaBell AB206 Flight Manual E-AB206-250-1, Section 3 Emergency Procedures (student's copy); helicopter code G values used where the manual differs by code",
+   "items": [
+    {
+     "item": "Airspeed",
+     "action": "Adjust for the most comfortable control forces",
+     "confirm": true
+    },
+    {
+     "item": "Hydraulic control circuit breaker",
+     "action": "OUT, check for electrical failure of the switch",
+     "auto": "cb_hyd_out",
+     "note": "Bell FM: HYD BOOST circuit breaker - Out; if power is not restored - In. Pulling it de-energises the solenoid, which leaves the boost ON."
+    },
+    {
+     "item": "Hydraulic control circuit breaker",
+     "action": "IN if failure is confirmed hydraulic",
+     "confirm": true
+    },
+    {
+     "item": "Hydraulic control switch",
+     "action": "OFF if power not restored",
+     "auto": "hyd_off"
+    },
+    {
+     "item": "Landing",
+     "action": "As soon as practical; shallow approach, zero or 3-5 kt ground speed",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "e_bell_fire_start",
+   "title": "ENGINE FIRE DURING STARTING OR SHUTDOWN (Bell RFM)",
+   "kind": "emergency",
+   "source": "Bell BHT-206B3-FM-1 Section 3",
+   "items": [
+    {
+     "item": "Starter",
+     "action": "Continue to motor the engine",
+     "auto": "starter_on"
+    },
+    {
+     "item": "Throttle",
+     "action": "Full closed",
+     "auto": "throttle_closed"
+    },
+    {
+     "item": "FUEL VALVE switch",
+     "action": "OFF",
+     "auto": "fuel_valve_off"
+    },
+    {
+     "item": "IGN ENG circuit breaker",
+     "action": "Out",
+     "auto": "cb_ign_out"
+    },
+    {
+     "item": "Shutdown",
+     "action": "Complete",
+     "confirm": true
+    }
+   ]
+  },
+  {
+   "id": "limits",
+   "title": "LIMITATIONS",
+   "kind": "info",
+   "source": "Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 1 Limitations (Rev. 3) and the student's AB206 manual for autorotation speeds",
+   "items": [
+    {
+     "heading": "Gas producer (N1)"
+    },
+    {
+     "item": "Maximum",
+     "action": "105%"
+    },
+    {
+     "item": "Transient",
+     "action": "106% (15 s maximum)"
+    },
+    {
+     "item": "Ground idle check",
+     "action": "60-62%"
+    },
+    {
+     "heading": "Torque"
+    },
+    {
+     "item": "Takeoff",
+     "action": "100% (5 minutes)"
+    },
+    {
+     "item": "Transient",
+     "action": "110% (5 s; intentional use prohibited)"
+    },
+    {
+     "item": "Maximum continuous",
+     "action": "85%"
+    },
+    {
+     "heading": "TOT (turbine outlet temperature)"
+    },
+    {
+     "item": "Takeoff",
+     "action": "810 C (5 minutes)"
+    },
+    {
+     "item": "Maximum continuous",
+     "action": "738 C"
+    },
+    {
+     "item": "Power transient",
+     "action": "810-843 C (6 s maximum; intentional use prohibited)"
+    },
+    {
+     "item": "Starting and shutdown",
+     "action": "810-927 C for 10 s maximum; 927 C never (red light: 812-927 C for 10 s or 927 C for 1 s)"
+    },
+    {
+     "heading": "Rotor (NR)"
+    },
+    {
+     "item": "Power on",
+     "action": "97-100% (transient droop to 95% allowed, under 5 s)"
+    },
+    {
+     "item": "Power off",
+     "action": "90-107%"
+    },
+    {
+     "item": "50-60% NR",
+     "action": "Accelerate through as rapidly as practical, cyclic neutral"
+    },
+    {
+     "heading": "Engine oil pressure"
+    },
+    {
+     "item": "Below 78.5% N1",
+     "action": "50 psi minimum"
+    },
+    {
+     "item": "78.5-94.2% N1",
+     "action": "90 psi minimum"
+    },
+    {
+     "item": "Above 94.2% N1",
+     "action": "115 psi minimum"
+    },
+    {
+     "item": "Maximum",
+     "action": "130 psi"
+    },
+    {
+     "item": "Engine oil temperature",
+     "action": "0 to 107 C, maximum 107 C"
+    },
+    {
+     "heading": "Transmission oil"
+    },
+    {
+     "item": "Pressure",
+     "action": "30 psi minimum, 30-50 continuous, 70 maximum"
+    },
+    {
+     "item": "Temperature",
+     "action": "15-110 C, maximum 110 C"
+    },
+    {
+     "heading": "Fuel"
+    },
+    {
+     "item": "Fuel pressure",
+     "action": "4 psi minimum, 30 psi maximum"
+    },
+    {
+     "item": "Boost pumps",
+     "action": "ON for all normal operations"
+    },
+    {
+     "item": "FUEL LOW light",
+     "action": "About 20 US gal left (S/N 4110 and prior), 17 US gal (S/N 4111 and later)"
+    },
+    {
+     "heading": "Engine starter (battery)"
+    },
+    {
+     "item": "Limits",
+     "action": "40 s ON, 60 s OFF, 40 s ON, 60 s OFF, 40 s ON, 30 min OFF"
+    },
+    {
+     "heading": "Engine anti-ice"
+    },
+    {
+     "item": "Use",
+     "action": "Not above 4.4 C; ON in visible moisture at 4.4 C or below"
+    },
+    {
+     "heading": "Loadmeter"
+    },
+    {
+     "item": "Maximum",
+     "action": "70%"
+    },
+    {
+     "heading": "Weight"
+    },
+    {
+     "item": "Maximum gross weight",
+     "action": "3200 lb internal, 3350 lb external load"
+    },
+    {
+     "heading": "Autorotation"
+    },
+    {
+     "item": "Bell RFM",
+     "action": "Minimum descent 52 KIAS, maximum glide 69 KIAS, maximum 100 KIAS; level touchdown before NR passes 70%"
+    },
+    {
+     "item": "AB206 manual (code G)",
+     "action": "Best glide 71 KIAS, minimum descent 42 KIAS, maximum 100 kt"
+    }
+   ]
+  }
+ ]
+}

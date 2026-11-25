@@ -31,6 +31,12 @@ extends Node
 
 const HTTPS_PORT := 8206
 const HTTP_PORT := 8207
+## If 8206/8207 are taken (most often a second AB206 window that is still open, or one that did not
+## close properly), the server moves to the next free pair and says so; the QR code and address
+## follow the ports really in use.
+const PORT_PAIRS := [[8206, 8207], [8216, 8217], [8226, 8227], [8236, 8237]]
+var https_port := HTTPS_PORT
+var http_port := HTTP_PORT
 const CERT_PATH := "user://phone_tls.crt"
 const KEY_PATH := "user://phone_tls.key"
 const PAGE_PATH := "res://phone/phone.html"
@@ -59,6 +65,10 @@ var coll_invert := false
 var twist_throttle := false      # collective phone also works the twist grip
 var twist_range_deg := 35.0
 var twist_invert := false
+var coll_pedals := 1             # collective phone also works the pedals: 0 off, 1 turn it left/right (heading), 2 tilt it left/right
+var coll_ped_range_deg := 25.0
+var coll_ped_deadzone_deg := 2.0
+var coll_ped_invert := false
 var ped_mode := 0                # 0 = turn (turntable, heading), 1 = rock (left/right tilt)
 var ped_range_deg := 20.0        # bar rotation / rocker tilt for full pedal
 var ped_deadzone_deg := 1.0
@@ -104,17 +114,34 @@ func start() -> bool:
 	else:
 		_page = "<html><body>phone.html missing</body></html>".to_utf8_buffer()
 	_tls_opts = _make_tls()
-	_srv_tls = TCPServer.new()
 	var e1 := ERR_UNAVAILABLE
-	if _tls_opts != null:
-		e1 = _srv_tls.listen(HTTPS_PORT, "*")
-	_srv_plain = TCPServer.new()
-	var e2 := _srv_plain.listen(HTTP_PORT, "*")
+	var e2 := ERR_UNAVAILABLE
+	var moved := false
+	for pair in PORT_PAIRS:
+		_srv_tls = TCPServer.new()
+		_srv_plain = TCPServer.new()
+		e1 = _srv_tls.listen(pair[0], "*") if _tls_opts != null else ERR_UNAVAILABLE
+		e2 = _srv_plain.listen(pair[1], "*")
+		if e2 == OK and (e1 == OK or _tls_opts == null):
+			https_port = pair[0]
+			http_port = pair[1]
+			break
+		# this pair is (partly) taken: free what we got and try the next pair
+		_srv_tls.stop()
+		_srv_plain.stop()
+		e1 = ERR_UNAVAILABLE
+		e2 = ERR_UNAVAILABLE
+		moved = true
 	if e1 != OK and e2 != OK:
-		error_text = "Could not open ports %d/%d (another program uses them?)" % [HTTPS_PORT, HTTP_PORT]
+		error_text = "Could not open the phone ports (8206-8237). Another AB206 window is probably still open: close it (taskbar, or Task Manager > Godot), then press Start phone server."
 		return false
 	if e1 != OK:
-		error_text = "HTTPS port %d unavailable; only plain HTTP %d is running." % [HTTPS_PORT, HTTP_PORT]
+		error_text = "HTTPS port unavailable; only plain HTTP %d is running." % http_port
+	elif moved:
+		error_text = "Ports 8206/8207 are busy (another AB206 window still open?), so the phone server uses %d/%d. Use the new address / QR code below." % [https_port, http_port]
+	var html := _page.get_string_from_utf8()
+	if html.find("__HTTPS_PORT__") >= 0:
+		_page = html.replace("__HTTPS_PORT__", str(https_port)).to_utf8_buffer()
 	running = true
 	addresses = local_addresses()
 	return true
@@ -151,25 +178,53 @@ func _make_tls() -> TLSOptions:
 		return null
 	return TLSOptions.server(key, cert)
 
+## IPv4 addresses a phone could use, best first. The QR code uses the first one.
+## Virtual adapters (Hyper-V "vEthernet", WSL, VirtualBox, VMware, Docker...) exist only inside the PC,
+## so they go last; Wi-Fi comes first, then wired Ethernet. (Sorting the plain address text put
+## Hyper-V's 172.20.0.1 before an iPhone hotspot's 172.20.10.5 - the phone could not load the page.)
 static func local_addresses() -> PackedStringArray:
-	var out: PackedStringArray = []
+	var scored := []
+	var seen := {}
+	for itf in IP.get_local_interfaces():
+		var nm := (str(itf.get("friendly", "")) + " " + str(itf.get("name", ""))).to_lower()
+		for a in itf.get("addresses", []):
+			a = str(a)
+			if seen.has(a) or not _usable(a):
+				continue
+			seen[a] = true
+			scored.append([_score(a, nm), a])
+	# fallback when the interface list is empty (some platforms)
 	for a in IP.get_local_addresses():
-		if a.contains(":"):
-			continue      # IPv6
-		if a.begins_with("127.") or a.begins_with("169.254."):
-			continue
-		out.append(a)
-	# private LAN ranges first (Wi-Fi is normally 192.168.x.x or 10.x.x.x)
-	out.sort()
-	var lan: PackedStringArray = []
-	var other: PackedStringArray = []
-	for a in out:
-		if a.begins_with("192.168.") or a.begins_with("10.") or _is_172_private(a):
-			lan.append(a)
-		else:
-			other.append(a)
-	lan.append_array(other)
-	return lan
+		a = str(a)
+		if not seen.has(a) and _usable(a):
+			seen[a] = true
+			scored.append([_score(a, ""), a])
+	scored.sort_custom(func(x, y) -> bool: return x[0] > y[0] if x[0] != y[0] else str(x[1]) < str(y[1]))
+	var out: PackedStringArray = []
+	for e in scored:
+		out.append(e[1])
+	return out
+
+static func _usable(a: String) -> bool:
+	return not a.contains(":") and not a.begins_with("127.") and not a.begins_with("169.254.") and a.count(".") == 3
+
+const _VIRTUAL := ["vethernet", "hyper-v", "wsl", "virtualbox", "vbox", "vmware", "vmnet", "docker", "loopback", "npcap", "bluetooth", "zerotier", "tailscale", "hamachi", "tap-", "tun", "wintun", "nordlynx", "openvpn", "default switch"]
+
+static func _score(a: String, nm: String) -> int:
+	var sc := 0
+	if a.begins_with("192.168.") or a.begins_with("10.") or _is_172_private(a):
+		sc += 10
+	if a.begins_with("172.20.10.") or a.begins_with("192.168.43.") or a.begins_with("192.168.137."):
+		sc += 5          # iPhone / Android hotspot / Windows hotspot ranges
+	if nm.contains("wi-fi") or nm.contains("wifi") or nm.contains("wlan") or nm.contains("wireless"):
+		sc += 40
+	elif nm.contains("ethernet") and not nm.contains("vethernet"):
+		sc += 20
+	for v in _VIRTUAL:
+		if nm.contains(v):
+			sc -= 100
+			break
+	return sc
 
 static func _is_172_private(a: String) -> bool:
 	if not a.begins_with("172."):
@@ -177,9 +232,12 @@ static func _is_172_private(a: String) -> bool:
 	var p := a.split(".")
 	return p.size() > 1 and int(p[1]) >= 16 and int(p[1]) <= 31
 
+var _addr_timer := 2.0
+var addr_pick := 0      # which of `addresses` the QR code shows (F10 "Use another address")
+
 func url(secure := true) -> String:
-	var ip := addresses[0] if addresses.size() > 0 else "<this-pc-ip>"
-	return ("https://%s:%d" % [ip, HTTPS_PORT]) if secure else ("http://%s:%d" % [ip, HTTP_PORT])
+	var ip := addresses[clampi(addr_pick, 0, addresses.size() - 1)] if addresses.size() > 0 else "<this-pc-ip>"
+	return ("https://%s:%d" % [ip, https_port]) if secure else ("http://%s:%d" % [ip, http_port])
 
 # ------------------------------------------------------------------- polling
 func _process(dt: float) -> void:
@@ -193,12 +251,23 @@ func _process(dt: float) -> void:
 			lost_at[r] = now
 			drops[r] = int(drops.get(r, 0)) + 1
 			role_lost.emit(r)
+	# the PC's address changes when Wi-Fi / hotspot changes: re-detect so the QR code follows
+	_addr_timer -= dt
+	if _addr_timer <= 0.0:
+		_addr_timer = 2.0
+		var na := local_addresses()
+		if na != addresses:
+			var cur := addresses[addr_pick] if addr_pick < addresses.size() else ""
+			addresses = na
+			addr_pick = maxi(na.find(cur), 0)
 	_status_timer -= dt
 	if _status_timer <= 0.0:
 		_status_timer = 0.2
 		for c in _conns:
 			if c.ws and c.role != "":
 				_ws_send(c, "s," + c.role + "," + str(role_status.get(c.role, "")))
+				if c.role == "collective":
+					_ws_send(c, "m," + ["off", "turn", "tilt"][coll_pedals])
 				if c.role == "pedals":
 					_ws_send(c, "m," + ("turn" if ped_mode == 0 else "rock"))
 
@@ -433,13 +502,15 @@ func _handle_message(line: String, c) -> String:
 	if f.size() < 2:
 		return ""
 	var role := f[1]
-	if role != "cyclic" and role != "collective" and role != "pedals":
+	if role != "cyclic" and role != "collective" and role != "pedals" and role != "all":
 		return ""
 	match f[0]:
 		"o":
 			if f.size() < 5:
 				return ""
 			feed(role, float(f[2]), float(f[3]), float(f[4]), float(f[5]) if f.size() >= 6 and f[5] != "" else NAN)
+			if role == "all" and f.size() >= 7 and roles.has("all"):
+				roles["all"]["touch_coll"] = clampf(float(f[6]), 0.0, 1.0)     # on-screen collective slider
 		"c":
 			if roles.has(role):
 				calibrate(role)
@@ -544,15 +615,47 @@ func pedal_deg() -> float:
 		return _wrap180(float(s["yaw"]) - float(s["y0"]))
 	return _wrap180(float(s["roll"]) - float(s["r0"]))      # right edge down = right pedal
 
+## Collective-phone pedal angle, degrees, + = right pedal (before invert). Only when no pedal phone.
+## Turn: point the phone's front edge to the right (clockwise seen from above, alpha falls) = right pedal.
+## Tilt: right edge down = right pedal.
+func coll_pedal_deg() -> float:
+	if not roles.has("collective"):
+		return 0.0
+	var s: Dictionary = roles["collective"]
+	if coll_pedals == 1:
+		return _wrap180(float(s["y0"]) - float(s["yaw"]))
+	if coll_pedals == 2:
+		return _wrap180(float(s["roll"]) - float(s["r0"]))
+	return 0.0
+
+## One-phone mode ("all"): turning the phone left/right = pedals, + = right pedal.
+func all_pedal_deg() -> float:
+	if not roles.has("all"):
+		return 0.0
+	var s: Dictionary = roles["all"]
+	return _wrap180(float(s["y0"]) - float(s["yaw"]))
+
+## True when the collective phone is set to work the pedals and no separate pedal phone is connected.
+func coll_has_pedals() -> bool:
+	return coll_pedals > 0 and roles.has("collective") and not roles.has("pedals") \
+		and (coll_pedals == 2 or bool(roles["collective"].get("has_yaw", false)))
+
 ## Normalised control outputs, low-pass filtered. Call once per physics tick.
-## Returns {"lon","lat"} for cyclic, {"coll","thr"} for collective, {"ped"} for pedals.
+## Returns {"lon","lat"} for cyclic, {"coll","thr","ped"} for collective, {"ped"} for pedals.
 func axes(role: String, dt: float) -> Dictionary:
 	var s: Dictionary = roles[role]
 	var t := tilt_deg(role)
 	var a := 0.0
 	var b := 0.0
 	var c := 1.0
-	if role == "pedals":
+	if role == "all":
+		# tilt = cyclic (cyclic settings), turn = pedals (collective-phone pedal settings), thumb slider = collective
+		a = _shape_centered(t.x, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lon else 1.0)
+		b = _shape_centered(t.y, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lat else 1.0)
+		var pa := _shape_centered(all_pedal_deg(), coll_ped_range_deg, coll_ped_deadzone_deg, 0.0) * (-1.0 if coll_ped_invert else 1.0)
+		var k0 := 1.0 if s["first"] or smoothing_ms <= 0.0 else clampf(dt / (smoothing_ms / 1000.0), 0.0, 1.0)
+		s["f_p"] = lerpf(float(s.get("f_p", 0.0)), pa if s.get("has_yaw", false) else 0.0, k0)
+	elif role == "pedals":
 		a = _shape_centered(pedal_deg(), ped_range_deg, ped_deadzone_deg, 0.0) * (-1.0 if ped_invert else 1.0)
 	elif role == "cyclic":
 		a = _shape_centered(t.x, cyc_range_deg, cyc_deadzone_deg, cyc_expo) * (-1.0 if cyc_invert_lon else 1.0)
@@ -560,7 +663,8 @@ func axes(role: String, dt: float) -> Dictionary:
 	else:
 		var up := -t.x * (-1.0 if coll_invert else 1.0)     # front edge raised = up
 		a = clampf((up - coll_deadband_deg) / maxf(coll_range_deg, 5.0), 0.0, 1.0)
-		if twist_throttle:
+		b = _shape_centered(coll_pedal_deg(), coll_ped_range_deg, coll_ped_deadzone_deg, 0.0) * (-1.0 if coll_ped_invert else 1.0)
+		if twist_throttle and coll_pedals != 2:      # tilt is the pedals then
 			var tw := t.y * (-1.0 if twist_invert else 1.0)    # roll one way = close
 			c = 1.0 - clampf((tw - 6.0) / maxf(twist_range_deg, 5.0), 0.0, 1.0)
 	var k := 1.0 if s["first"] or smoothing_ms <= 0.0 else clampf(dt / (smoothing_ms / 1000.0), 0.0, 1.0)
@@ -568,11 +672,13 @@ func axes(role: String, dt: float) -> Dictionary:
 	s["f_a"] = lerpf(float(s["f_a"]), a, k)
 	s["f_b"] = lerpf(float(s["f_b"]), b, k)
 	s["f_c"] = lerpf(float(s["f_c"]), c, k)
+	if role == "all":
+		return {"lon": float(s["f_a"]), "lat": float(s["f_b"]), "ped": float(s["f_p"]), "coll": float(s.get("touch_coll", 0.0)), "thr": 1.0}
 	if role == "pedals":
 		return {"ped": float(s["f_a"])}
 	if role == "cyclic":
 		return {"lon": float(s["f_a"]), "lat": float(s["f_b"])}
-	return {"coll": float(s["f_a"]), "thr": float(s["f_c"])}
+	return {"coll": float(s["f_a"]), "thr": float(s["f_c"]), "ped": float(s["f_b"])}
 
 var _pending_buzz: Array = []
 var _post_active_t := -100.0
@@ -593,7 +699,8 @@ func _now() -> float:
 # -------------------------------------------------------------------- config
 const _KEYS := ["cyc_range_deg", "cyc_deadzone_deg", "cyc_expo", "cyc_invert_lon", "cyc_invert_lat",
 	"coll_range_deg", "coll_deadband_deg", "coll_invert", "twist_throttle", "twist_range_deg", "twist_invert", "smoothing_ms",
-	"ped_mode", "ped_range_deg", "ped_deadzone_deg", "ped_invert"]
+	"ped_mode", "ped_range_deg", "ped_deadzone_deg", "ped_invert",
+	"coll_pedals", "coll_ped_range_deg", "coll_ped_deadzone_deg", "coll_ped_invert"]
 
 var autostart := false
 

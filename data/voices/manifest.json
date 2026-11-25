@@ -1,0 +1,30 @@
+{
+  "exact": {
+    "i have control. i will steady it, then give it to you.": "b1_01.wav",
+    "i have control.": "b1_02.wav",
+    "you have control.": "b1_03.wav",
+    "you have the collective. hold one metre.": "b1_04.wav",
+    "you have the pedals. hold heading three six zero.": "b1_05.wav",
+    "you have the cyclic. stay over the spot.": "b1_06.wav",
+    "you have control. stabilise first.": "b1_07.wav",
+    "you have control. wind from the right, gusting.": "b1_08.wav",
+    "raise the collective slowly. left pedal as the skids get light.": "b1_09.wav",
+    "stabilise the hover.": "b1_10.wav",
+    "stabilise the hover, heading three six zero.": "b1_11.wav",
+    "fly level. i will call the approach.": "b1_12.wav",
+    "climb to two metres.": "b1_13.wav",
+    "back down to one metre.": "b1_14.wav",
+    "now land. very slowly.": "b1_15.wav",
+    "turn left to two seven zero.": "b1_16.wav",
+    "turn right to three six zero.": "b1_17.wav",
+    "move five metres right.": "b1_18.wav",
+    "back to the centre.": "b1_19.wav",
+    "turn left, three sixty.": "b1_20.wav",
+    "now turn right, three sixty.": "b1_21.wav",
+    "airborne. up to one metre.": "b1_22.wav",
+    "now land vertically. very gently.": "b1_23.wav",
+    "hover taxi forward to the yellow spot.": "b1_24.wav",
+    "hold over the spot.": "b1_25.wav"
+  },
+  "prefix": {}
+}

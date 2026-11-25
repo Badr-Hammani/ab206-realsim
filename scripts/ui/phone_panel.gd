@@ -110,7 +110,7 @@ func _rebuild() -> void:
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.add_child(G.label("AB206 REALSIM  ·  SETUP", 12, G.TEXT3))
 	tv.add_child(G.label("Phone controller", 30, G.TEXT))
-	tv.add_child(G.label("Up to three phones: cyclic, collective and pedals (feet). Settings are saved.", 13, G.TEXT2))
+	tv.add_child(G.label("One phone can fly everything (One-phone mode), or use two: cyclic + collective with pedals. A pedal phone for the feet is optional.", 13, G.TEXT2))
 	head.add_child(tv)
 	var done := Button.new()
 	done.text = "Done"
@@ -151,7 +151,18 @@ func _rebuild() -> void:
 		left.add_child(G.label("First time: accept the certificate warning (\"Advanced\" > \"Proceed\", or \"Show details\" > \"visit this website\" on iPhone). It is this simulator's own certificate and only works on your local network.", 12, G.TEXT3, true))
 		left.add_child(G.label("Motion not working? Try " + phone.url(false) + "  (plain HTTP, some Android browsers allow it).", 12, G.TEXT3, true))
 		if phone.addresses.size() > 1:
-			left.add_child(G.label("Other addresses of this PC: " + ", ".join(phone.addresses.slice(1)), 12, G.TEXT3, true))
+			var ah := HBoxContainer.new()
+			ah.add_theme_constant_override("separation", 10)
+			var al := G.label("Page does not load on the phone? This PC has %d addresses - try the next one:" % phone.addresses.size(), 12, G.TEXT3, true)
+			al.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ah.add_child(al)
+			var ab := Button.new()
+			ab.text = "Use another address"
+			ab.pressed.connect(func() -> void:
+				phone.addr_pick = (phone.addr_pick + 1) % phone.addresses.size()
+				_rebuild())
+			ah.add_child(ab)
+			left.add_child(ah)
 		left.add_child(G.label("Windows asks once if Godot may use the network: allow it.", 12, G.TEXT3, true))
 	else:
 		left.add_child(G.label("Start the server, then open the address on your phone. Keyboard, mouse and joystick keep working for everything the phones do not control.", 13, G.TEXT2, true))
@@ -173,12 +184,12 @@ func _rebuild() -> void:
 	status_box = VBoxContainer.new()
 	status_box.add_theme_constant_override("separation", 6)
 	live.add_child(status_box)
-	for r in ["cyclic", "collective", "pedals"]:
+	for r in ["cyclic", "collective", "pedals", "all"]:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		var dot := G.label("●", 16, G.TEXT3)
 		row.add_child(dot)
-		var name := G.label(("Pedal" if r == "pedals" else r.capitalize()) + " phone", 15, G.TEXT)
+		var name := G.label({"cyclic": "Cyclic phone", "collective": "Collective phone", "pedals": "Pedal phone", "all": "One-phone mode"}[r], 15, G.TEXT)
 		name.custom_minimum_size = Vector2(140, 0)
 		row.add_child(name)
 		var info := G.label("", 13, G.TEXT2, true)
@@ -209,6 +220,26 @@ func _rebuild() -> void:
 	_slider(c2, "Lever angle, down to full up", 15.0, 70.0, 1.0, phone.coll_range_deg, "%.0f°", func(v: float) -> void: phone.coll_range_deg = v)
 	_slider(c2, "Rest band at the bottom", 0.0, 8.0, 0.5, phone.coll_deadband_deg, "%.1f°", func(v: float) -> void: phone.coll_deadband_deg = v)
 	_switch(c2, "Invert collective", phone.coll_invert, func(v: bool) -> void: phone.coll_invert = v)
+	var ph := HBoxContainer.new()
+	var pl := G.label("Pedals on this phone", 14, G.TEXT)
+	pl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ph.add_child(pl)
+	for i in 3:
+		var pb := Button.new()
+		pb.text = ["Off", "Turn", "Tilt"][i]
+		pb.toggle_mode = true
+		pb.button_pressed = phone.coll_pedals == i
+		pb.pressed.connect(func() -> void:
+			phone.coll_pedals = i
+			phone.calibrate("collective")
+			_rebuild())
+		ph.add_child(pb)
+	c2.add_child(ph)
+	if phone.coll_pedals > 0:
+		_slider(c2, "Turn / tilt for full pedal", 8.0, 60.0, 1.0, phone.coll_ped_range_deg, "%.0f°", func(v: float) -> void: phone.coll_ped_range_deg = v)
+		_slider(c2, "Pedal dead zone", 0.0, 8.0, 0.5, phone.coll_ped_deadzone_deg, "%.1f°", func(v: float) -> void: phone.coll_ped_deadzone_deg = v)
+		_switch(c2, "Invert pedals", phone.coll_ped_invert, func(v: bool) -> void: phone.coll_ped_invert = v)
+		c2.add_child(G.label("Turn: point the phone's front edge left/right, like steering = left/right pedal (gyro heading: can drift slowly, N re-centres). Tilt: right side down = right pedal (no drift; the twist grip is then off). A separate pedal phone, if connected, takes priority.", 12, G.TEXT3, true))
 	_switch(c2, "Twist grip = throttle (rotate about long axis)", phone.twist_throttle, func(v: bool) -> void: phone.twist_throttle = v)
 	_switch(c2, "Invert twist direction", phone.twist_invert, func(v: bool) -> void: phone.twist_invert = v)
 	_slider(c2, "Twist to idle", 15.0, 70.0, 1.0, phone.twist_range_deg, "%.0f°", func(v: float) -> void: phone.twist_range_deg = v)
@@ -260,6 +291,15 @@ func _process(_dt: float) -> void:
 			var eng: bool = controls.phone_engaged(r)
 			col = G.GOOD if eng else G.WARN
 			var mv := "tilt fwd %+.1f°  right %+.1f°" % [tl.x, tl.y]
+			if r == "all":
+				var sa: Dictionary = phone.roles["all"]
+				mv = "tilt fwd %+.1f° right %+.1f°  ·  turn %+.1f°  ·  collective slider %.0f%%" % [tl.x, tl.y, phone.all_pedal_deg(), 100.0 * float(sa.get("touch_coll", 0.0))]
+				if not sa.get("has_yaw", false):
+					mv += "  ·  no heading: pedals stay on A/D"
+			if r == "collective" and phone.coll_has_pedals():
+				mv += "  ·  pedals %+.1f° %s" % [phone.coll_pedal_deg(), "IN CONTROL" if controls.phone_ped_engaged else ""]
+			elif r == "collective" and phone.coll_pedals == 1 and not s.get("has_yaw", false):
+				mv += "  ·  no heading from this phone: set its pedals to Tilt"
 			if r == "pedals":
 				mv = "%s %+.1f° (right +)" % ["turned" if phone.ped_mode == 0 else "rocked", phone.pedal_deg()]
 				if phone.ped_mode == 0 and not s.get("has_yaw", false):
