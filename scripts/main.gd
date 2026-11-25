@@ -559,6 +559,10 @@ func preset_name() -> String:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 		controls.mouse_look_held = event.pressed
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and cam_rig.mode == cam_rig.Mode.COCKPIT:
+		if _click_panel(event.position):
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventMouseMotion and controls.mouse_look_held:
 		cam_rig.mouse_look(event.relative)
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not controls.mouse_cyclic and not controls.mouse_look_held and not controls._joy_bound("cyclic_lat") and (event as InputEventMouseMotion).relative.length() > 25.0 and Time.get_ticks_msec() - _mouse_off_hint_at > 15000:
@@ -766,6 +770,8 @@ func _on_joy_action(act: String) -> void:
 			_set_paused(paused)
 		"cold_dark":
 			reset_cold_dark(false)
+		"fuel_valve":
+			toggle_fuel_valve()
 
 ## F12: saves a PNG to the user data folder (shown on screen). Also used by --autoshot test mode.
 func take_screenshot(path: String) -> String:
@@ -966,6 +972,39 @@ func _physics_process(delta: float) -> void:
 var _ct_by_joy := false
 var _thr_axis_was_low := false
 
+## Click on the 3D instrument panel (M2.30b): with the mouse captured the click goes where you look
+## (screen centre: look at it with the right mouse button or Z), otherwise where the cursor is.
+## Clickable now: the red FUEL VALVE handle (pull = OFF, push = ON).
+const FUEL_HANDLE_RECT := Rect2(826, 500, 60, 110)       # in panel texture pixels (instrument_panel.gd)
+func _click_panel(screen_pos: Vector2) -> bool:
+	var q: MeshInstance3D = heli.panel_quad
+	if q == null or not q.is_visible_in_tree():
+		return false
+	var cam: Camera3D = cam_rig.cam
+	var pos := screen_pos
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		pos = get_viewport().get_visible_rect().size * 0.5
+	var o := cam.project_ray_origin(pos)
+	var d := cam.project_ray_normal(pos)
+	var plane := Plane(q.global_transform.basis.z.normalized(), q.global_transform.origin)
+	var hit = plane.intersects_ray(o, d)
+	if hit == null:
+		return false
+	var lp: Vector3 = q.global_transform.affine_inverse() * (hit as Vector3)
+	var qs: Vector2 = (q.mesh as QuadMesh).size
+	var tex := Vector2((lp.x / qs.x + 0.5) * 1000.0, (0.5 - lp.y / qs.y) * 620.0)
+	if FUEL_HANDLE_RECT.has_point(tex):
+		toggle_fuel_valve()
+		return true
+	return false
+
+func toggle_fuel_valve() -> void:
+	if not systems.cb_in("FUEL VALVE"):
+		instructor.force("The FUEL VALVE circuit breaker is OUT: the valve does not move. Push the breaker in (O).")
+		return
+	systems.fuel_valve = not systems.fuel_valve
+	instructor.force("FUEL VALVE " + ("ON (handle pushed in)." if systems.fuel_valve else "OFF (handle pulled)."), "Fuel valve " + ("on." if systems.fuel_valve else "off."))
+
 ## Starter, idle release, frictions and governor beep (keys, HOTAS buttons and the J panel).
 func _cockpit_inputs(delta: float) -> void:
 	var free_cam: bool = cam_rig.mode == cam_rig.Mode.FREE
@@ -1073,7 +1112,7 @@ func _process(delta: float) -> void:
 		"low_rpm": systems.cautions["ROTOR LOW RPM"],
 		"tot": systems.tot, "cautions": systems.cautions, "eng_oil": systems.eng_oil_psi,
 		"trans_oil": systems.xmsn_oil_psi, "fuel_lb": systems.fuel_lb if systems.bus_powered and systems.cb_in("FUEL QTY") else 0.0, "fuel_psi": systems.fuel_psi,
-		"eng_oil_c": systems.eng_oil_c, "trans_oil_c": systems.xmsn_oil_c, "amps": systems.gen_amps, "oat": systems.oat_c, "ctest": systems.caution_test and systems.bus_powered and systems.cb_in("CAUTION LT"),
+		"eng_oil_c": systems.eng_oil_c, "trans_oil_c": systems.xmsn_oil_c, "amps": systems.gen_amps, "oat": systems.oat_c, "fuel_valve": systems.fuel_valve, "ctest": systems.caution_test and systems.bus_powered and systems.cb_in("CAUTION LT"),
 	}
 	if phone.running:
 		_phone_feedback(delta, vals)

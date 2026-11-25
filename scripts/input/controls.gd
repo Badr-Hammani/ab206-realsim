@@ -42,6 +42,7 @@ const BTN_ACTIONS := [
 	["gov_decr", "Governor RPM DECR (hold, [)", true],
 	["caution_test", "Caution lights test (hold)", true],
 	["checklist_ok", "Checklist item checked (Enter)", false],
+	["fuel_valve", "Fuel valve ON / OFF (red handle)", false],
 	["systems_panel", "Switches + checklists panel (J)", false],
 	["overhead_panel", "Overhead breakers (O)", false],
 	["cold_dark", "Cold and dark reset (Shift+F2)", false],

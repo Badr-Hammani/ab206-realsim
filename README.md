@@ -67,6 +67,9 @@ from your AB206 manual, limits). **I** (hold) = starter, hold **F** at idle = th
 **O** = overhead console: click a circuit breaker to pull it out / push it in (the FUEL BOOST
 breakers are out after cold and dark, like after the preflight fuel sample: push them in at the
 prestart check). The instrument panel now follows the layout of a real 206B-3 panel.
+FUEL VALVE = the red handle low on the right of the panel: left-click it in the cockpit (look at
+it with the right mouse button or Z, the click goes where you look) - pulled out = OFF, pushed in = ON.
+It is also in the J panel and can go on a HOTAS button.
 HOTAS / joystick (F8 > buttons): new assignable buttons Starter (hold), Governor INCR / DECR (hold),
 Caution test (hold), Checklist item checked, Switches panel (J), Overhead (O), Cold and dark. On the
 T.Flight Stick X the starter goes on button 12 automatically if it is free. Throttle by buttons:

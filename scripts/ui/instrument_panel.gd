@@ -123,11 +123,29 @@ func _draw() -> void:
 	for k in [Vector2(258, 214), Vector2(258, 470), Vector2(410, 96), Vector2(598, 96), Vector2(598, 420), Vector2(790, 96), Vector2(790, 246), Vector2(410, 590)]:
 		draw_circle(k, 9.0, Color(0.08, 0.08, 0.08))
 		draw_circle(k + Vector2(-2, -2), 3.0, Color(0.3, 0.3, 0.3))
-	# red handle low on the right (photo) and placards
-	draw_rect(Rect2(Vector2(842, 528), Vector2(26, 64)), Color(0.7, 0.07, 0.05))
-	draw_rect(Rect2(Vector2(838, 520), Vector2(34, 12)), Color(0.45, 0.05, 0.04))
-	draw_string(font, Vector2(600, 586), "MINIMUM CREW: ONE PILOT  -  OBSERVE LIMITATIONS IN FLIGHT MANUAL", HORIZONTAL_ALIGNMENT_LEFT, 230, 8, Color(0.15, 0.15, 0.15))
-	draw_string(font, Vector2(600, 598), "THIS HELICOPTER MUST BE OPERATED IN COMPLIANCE WITH BHT-206B3-FM-1", HORIZONTAL_ALIGNMENT_LEFT, 230, 7, Color(0.15, 0.15, 0.15))
+	# FUEL VALVE: the red handle low on the right (photo). Pushed in = ON, pulled out = OFF.
+	# Click it in the cockpit (look at it, left click), or use the J panel / a HOTAS button.
+	_fuel_handle(bool(v.get("fuel_valve", true)))
+	draw_string(font, Vector2(600, 586), "MINIMUM CREW: ONE PILOT  -  OBSERVE LIMITATIONS IN FLIGHT MANUAL", HORIZONTAL_ALIGNMENT_LEFT, 215, 8, Color(0.15, 0.15, 0.15))
+	draw_string(font, Vector2(600, 598), "THIS HELICOPTER MUST BE OPERATED IN COMPLIANCE WITH BHT-206B3-FM-1", HORIZONTAL_ALIGNMENT_LEFT, 215, 7, Color(0.15, 0.15, 0.15))
+
+func _fuel_handle(on: bool) -> void:
+	var base := Rect2(Vector2(832, 512), Vector2(48, 94))
+	draw_rect(base, Color(0.16, 0.16, 0.17))
+	draw_rect(base, Color(0.35, 0.35, 0.37), false, 1.5)
+	draw_string(font, Vector2(base.position.x - 6, base.position.y - 4), "FUEL VALVE", HORIZONTAL_ALIGNMENT_CENTER, 60, 8, Color(0.1, 0.1, 0.1))
+	if on:
+		# pushed in: short red T-handle flat against the bezel
+		draw_rect(Rect2(Vector2(846, 530), Vector2(20, 60)), Color(0.75, 0.07, 0.05))
+		draw_rect(Rect2(Vector2(840, 524), Vector2(32, 10)), Color(0.55, 0.05, 0.04))
+		draw_string(font, Vector2(base.position.x, base.end.y - 4), "ON", HORIZONTAL_ALIGNMENT_CENTER, 48, 9, Color(0.75, 1.0, 0.75))
+	else:
+		# pulled: the handle stands out (bigger, offset, with a shadow) and the yellow OFF band shows
+		draw_rect(Rect2(Vector2(840, 534), Vector2(32, 62)), Color(0, 0, 0, 0.45))
+		draw_rect(Rect2(Vector2(844, 524), Vector2(24, 58)), Color(0.95, 0.78, 0.1))
+		draw_rect(Rect2(Vector2(842, 514), Vector2(28, 64)), Color(0.9, 0.1, 0.06))
+		draw_rect(Rect2(Vector2(834, 506), Vector2(44, 12)), Color(0.68, 0.06, 0.04))
+		draw_string(font, Vector2(base.position.x, base.end.y - 4), "OFF", HORIZONTAL_ALIGNMENT_CENTER, 48, 9, Color(1.0, 0.85, 0.3))
 
 ## Draws f() with its origin at c and scale k (gauges are written around Vector2.ZERO).
 func _at(c: Vector2, k: float, f: Callable) -> void:

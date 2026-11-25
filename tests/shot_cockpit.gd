@@ -26,6 +26,15 @@ func _initialize() -> void:
 	main.systems.caution_test = true
 	await _snap(out + "/cockpit_test.png")
 	main.systems.caution_test = false
+	# click the red FUEL VALVE handle where it appears on screen (cursor mode)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var q: MeshInstance3D = main.heli.panel_quad
+	var lp := Vector3((856.0 / 1000.0 - 0.5) * 0.92, (0.5 - 555.0 / 620.0) * 0.57, 0.0)
+	var sp: Vector2 = main.cam_rig.cam.unproject_position(q.global_transform * lp)
+	var before: bool = main.systems.fuel_valve
+	var ok: bool = main._click_panel(sp)
+	print("FUEL HANDLE CLICK at %s: hit %s, valve %s -> %s" % [sp, ok, before, main.systems.fuel_valve])
+	await _snap(out + "/fuel_off.png")
 	main.systems.pull_breaker("IGN ENG")
 	main.cam_rig.look_pitch = 60.0
 	await _snap(out + "/overhead3d.png")
