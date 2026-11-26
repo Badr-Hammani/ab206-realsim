@@ -110,3 +110,27 @@ Variant: Bell 206B-3 JetRanger III with Allison/Rolls-Royce 250-C20J. User repor
 | Normal approach angle | about 10 deg (steep about 15 deg) | FAA Helicopter Flying Handbook; copters.com | Guidance |
 | Training hover height | 1 m (about 3 ft) | Simulator choice | Estimate |
 | Touchdown / turn-rate / closure guides, score weights | see docs/TRAINING.md | Simulator choice | Estimate |
+
+## Engine start, systems and checklists (milestone 2.30)
+
+| Item | Value used | Source | Status |
+|---|---|---|---|
+| Normal procedures (preflight, prestart, starting, hydraulics + run-up, before take-off, shutdown) | data/checklists.json | Bell BHT-206B3-FM-1 Rotorcraft Flight Manual, Section 2 (Rev. 8, 6 Oct 2000), supplied by the student | Verified (manufacturer manual) |
+| Light-off N1 | 15% above 7 C, 13% from -18 to +7 C, 12% below -18 C; never below 12%; TOT 150 C or below | BHT-206B3-FM-1 Section 2 | Verified |
+| Starter release / rotor turning / idle | 58% N1 / by 25% N1 / N1 60-62%, 1 min at idle after a shutdown of more than 15 min | BHT-206B3-FM-1 Section 2 | Verified |
+| TOT limits | 738 C continuous, 810 C take-off 5 min, 810-843 C 6 s transient, start 810-927 C 10 s max, red light 812-927 C 10 s / 927 C 1 s | BHT-206B3-FM-1 Section 1 | Verified |
+| Torque, N1 | 85% MCP, 100% 5 min, 110% 5 s; N1 105% (106% 15 s) | BHT-206B3-FM-1 Section 1 | Verified |
+| Oil / fuel pressure limits | engine oil 50 / 90 / 115 psi minimum by N1 band, 130 max; trans oil 30-50 psi (70 max); fuel 4-30 psi | BHT-206B3-FM-1 Section 1 | Verified (limits; the gauge curves are estimates) |
+| Starter limits (battery) | 40 s ON, 60 s OFF, 40 / 60, 40 s ON, 30 min OFF | BHT-206B3-FM-1 Section 1 | Verified |
+| Caution / warning lights | ENG OUT below 55% N1; ROTOR LOW RPM about 90% (horn not with collective full down); TRANS OIL PRESS; GEN FAIL; FUEL PUMP; FUEL LOW about 20 US gal; TOT light | BHT-206B3-FM-1 Sections 2-3 | Verified (names and triggers); HYD PRESS from the AB206 manual |
+| Emergency procedures | data/checklists.json "e_*" lists | AgustaBell AB206 Flight Manual E-AB206-250-1 Section 3 (student's school manual, helicopter code G values) | Verified (operator's manual) |
+| Quick cards | "QUICK CARD (website)" lists | helicopter.daviesgarden.com/checklist.html | Secondary (training website, not an RFM). The site's line "TOT - snap to idle stop" means the throttle. |
+| Start dynamics: N1 rates, light-off TOT peak (~700-760 C normal), hot-start terms, TOT vs power, oil/fuel pressure curves, fuel burn, generator on-line N1 (50%), ground-idle rotor speed (~43%), free-turbine stall torque | engine_systems.gd, heli_fdm.gd | SIMULATION estimates tuned so the gauges behave like the manual describes | Estimate |
+| Hydraulics OFF | controls follow the input slowly (heavy) | Simulation of "increase in force" (RFM hydraulics check) | Estimate |
+| Overhead circuit breakers named in the manual | FUEL BOOST AFT / FWD (the 206B-3 boost pumps have no switch: breakers in = pumps on), CAUTION LT, FUEL VALVE, IGN ENG (fire during start: Out), HYD BOOST (hydraulic failure: Out, solenoid de-energised = boost ON; if power not restored: In), PA SYST | BHT-206B3-FM-1 Sections 2-3 | Verified (names and what the procedures do with them) |
+| GEN FIELD breaker | Electrical emergency "Generator field circuit breaker - check IN" | AgustaBell AB206 E-AB206-250-1 Section 3 | Verified (operator's manual) |
+| Other breakers (START, GOV, ENG ANTI ICE, FUEL QTY, INST LT, PITOT HTR, LDG LT, ANTI COLL, NAV LT, COMM, NAV) and the arrangement of the overhead console | scripts/ui/overhead_panel.gd | Typical 206 breakers; the RFM has no drawing of the overhead console | SIMULATION layout - to be replaced by a photo of the real console |
+| Instrument panel layout (M2.30b) | 1000 x 620 face (0.92 x 0.57 m), caution strip in the glareshield shadow; columns A/B small engine gauges (torque, TOT, N1, fuel qty / engine oil, transmission oil, fuel pressure, amps); column C airspeed, dual tach, white blank cover; column D attitude, heading, clock; column E altimeter, VSI, OAT; red handle low right; screws, knobs, placards | The student's photo of a real Bell 206B-3 panel (B206_upper_panel.jpg), positions measured on the photo | Layout from the photo; which gauge sits in each small hole is a best reading of a low-resolution photo |
+| Caution lamps without a simulated failure | XMSN OIL TEMP, A/F FUEL FILTER, ENG CHIP, XMSN CHIP, T/R CHIP (light on the press-to-test only) | Light names used in BHT-206B3-FM-1 | Verified names; failures not simulated yet |
+| Breaker amp ratings on the caps | 2-20 A | Typical values, not Bell data | SIMULATION |
+| Oil temperatures, generator amps, rotor coast-down friction | engine_systems.gd, heli_fdm.gd | SIMULATION estimates (oil temperature limits 107 C engine, 110 C transmission from RFM Section 1) | Estimate |

@@ -1,4 +1,4 @@
-# AB206 REALSIM - Bell 206B-3 helicopter simulator (Milestone 2.12: training)
+# AB206 REALSIM - Bell 206B-3 helicopter simulator (Milestone 2.13: Mission 2 briefings)
 
 A personal learning simulator for the Bell 206B-3 JetRanger III (Allison/Rolls-Royce 250-C20J),
 built with Godot 4.6 and a project-owned helicopter flight model.
@@ -23,6 +23,13 @@ The phone tilt controller (F10) and joystick setup only work in the Windows vers
    https://godotengine.org/download/archive/ and unzip both `.exe` files into `engine\`.
 2. You start on the main helipad, engine running, rotor at 100%, collective fully down.
 3. Press **F1** at any time for the control list.
+
+## Maps: training valley or real Khouribga (new in M2.14)
+
+**Esc → Fly → Map** switches between the fictional training valley and **Khouribga GMMK**: 16 x 16 km
+of real terrain (Copernicus elevation data and a Sentinel-2 satellite photo) with runway 05/23,
+taxiways, aprons and the apron helipad from OpenStreetMap. You start on a training pad next to the apron;
+all lessons work there too. What is real and what is estimated: [docs/MAPS.md](docs/MAPS.md).
 
 ## Controls (keyboard + mouse)
 
@@ -50,6 +57,26 @@ The phone tilt controller (F10) and joystick setup only work in the Windows vers
 | Training assist | **H** | Off / 1 damping / 2 attitude hold / 3 hover hold - learning aids; you choose the level (Esc menu picker or H) and it stays. Optional automatic fading. The real 206 has no stability augmentation |
 | Training speed | **Y** | 100 / 75 / 50 % (slow motion while learning) |
 | Screenshot | **F12** | Saved in the user data folder |
+
+## Cold-and-dark start and the flight-manual checklists (new in M2.30)
+
+Esc > Fly > **Cold and dark** (or Shift+F2): everything off on the pad. **J** = cockpit switches + the
+Bell 206B-3 flight-manual checklists (prestart, starting, run-up, before take-off, shutdown, emergencies
+from your AB206 manual, limits). **I** (hold) = starter, hold **F** at idle = throttle CLOSED,
+**R** = throttle to idle (light-off), **[ ]** = governor RPM, **Enter** = item checked.
+**O** = overhead console: click a circuit breaker to pull it out / push it in (the FUEL BOOST
+breakers are out after cold and dark, like after the preflight fuel sample: push them in at the
+prestart check). The instrument panel now follows the layout of a real 206B-3 panel.
+FUEL VALVE = the red handle low on the right of the panel: left-click it in the cockpit (look at
+it with the right mouse button or Z, the click goes where you look) - pulled out = OFF, pushed in = ON.
+It is also in the J panel and can go on a HOTAS button.
+HOTAS / joystick (F8 > buttons): new assignable buttons Starter (hold), Governor INCR / DECR (hold),
+Caution test (hold), Checklist item checked, Switches panel (J), Overhead (O), Cold and dark. On the
+T.Flight Stick X the starter goes on button 12 automatically if it is free. Throttle by buttons:
+hold "throttle close" at idle for half a second = CLOSED; "throttle open" from CLOSED stops at the
+idle stop (release and press again to open). Throttle lever/axis: bring it to idle first, then
+pushing it up from idle opens the grip out of CLOSED; both ends of the axis snap to idle / full.
+New lessons **S1 Engine start** and **S2 Engine shutdown**. Details: docs/CHECKLISTS.md.
 
 ## Your first hover (simulation exercise)
 

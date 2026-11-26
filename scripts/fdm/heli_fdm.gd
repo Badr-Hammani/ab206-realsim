@@ -93,6 +93,19 @@ var cyclic_lat := 0.0   # +1 = full right stick
 var pedal := 0.0        # +1 = full right pedal
 var throttle := 1.0     # 0 = idle, 1 = full open (governor in control)
 
+# ------------------------------------------------- engine start / shutdown (M2.30)
+## Set every step by engine_systems.gd (switches, fuel valve, throttle CLOSED position, starter).
+## Defaults = engine running, so the flight-model tests and the "engine running" start are unchanged.
+var lit := true                     # combustion running in the gas producer
+var ignition := true                 # igniter powered (IGN ENG breaker in, bus powered) - M2.30
+var fuel_available := true          # fuel valve ON, fuel pressure, throttle NOT in the closed (cut-off) position
+var starter := false                # starter-generator motoring the gas producer (needs electrical power)
+var starting := false               # light-off done, accelerating to ground idle
+var gov_set_pct := 100.0            # N2 governor setting (GOV RPM beep switch, 97-100%)
+const STARTER_N1 := 24.0            # SIMULATION: N1 the starter alone can motor to (estimated)
+const LIGHT_OFF_MIN_N1 := 8.0
+const STALL_Q := 900.0              # SIMULATION: extra free-turbine torque at zero N2, N.m (tuned: ground idle NR ~55-60%)       # SIMULATION: below this the igniter cannot light the fuel (estimated)
+
 # --------------------------------------------------------------------- state
 var pos := Vector3.ZERO            # CG, Godot world
 var vel := Vector3.ZERO            # world m/s
@@ -253,9 +266,19 @@ func n1_for_power(power: float, density_ratio: float) -> float:
 
 ## Free-turbine output torque (rotor-shaft equivalent) at power-turbine speed w.
 func pt_torque(n1_pct: float, w: float, density_ratio: float) -> float:
-	var pg := gas_power(n1_pct, density_ratio)
+	var pg := gas_power(n1_pct, density_ratio) if lit else 0.0
+	if lit and n1_pct < n1_idle:
+		# SIMULATION: below ground idle the gas flow still turns the free turbine a little, so the
+		# main rotor starts to turn during the start (checklist: "main rotor turning by 25% N1")
+		pg = maxf(pg, 2500.0 * pow(clampf((n1_pct - 15.0) / (n1_idle - 15.0), 0.0, 1.0), 2.0))
 	var x := clampf(w / omega100, 0.0, 1.5)
-	return pg / omega100 * (2.0 - x) - 150.0 * x * x
+	var q := pg / omega100 * (2.0 - x) - 150.0 * x * x
+	if lit:
+		# M2.30 SIMULATION: free-turbine stall torque. At low power-turbine speed (rotor starting or
+		# at ground idle) the gas flow gives much more torque than near 100%; it fades out by 70% N2,
+		# so the needle split in autorotation (N2 ~70-75% at idle) and all flight numbers are unchanged.
+		q += STALL_Q * clampf((n1_pct - 12.0) / (n1_idle - 12.0), 0.0, 1.0) * pow(clampf(1.0 - x / 0.7, 0.0, 1.0), 1.5)
+	return q
 
 # ----------------------------------------------------------- aerodynamics
 ## Computes forces and moments for the current state and controls.
@@ -446,7 +469,44 @@ func compute_aero(out: Dictionary) -> void:
 
 	out["F"] = F
 	out["M"] = M
-	out["q_load"] = (p_main + p_tail + p_loss * (omr / omega100)) / omr
+	out["q_load"] = (p_main + p_tail + p_loss * pow(omr / omega100, 2.0)) / omr   # M2.30: losses fall with rpm (rotor can turn at idle)
+
+# ------------------------------------------------- engine start / flame-out
+## Gas producer (N1) when the engine is not simply running: starter motoring, light-off,
+## acceleration to ground idle, flame-out and spool-down. SIMULATION model (estimated rates):
+## a normal start takes about 25-35 s from light-off to idle, like the 250-C20 start the
+## checklist describes (light-off at 12-15% N1, starter released at 58% N1).
+func _step_start(dt: float, thr: float) -> void:
+	if lit and not fuel_available:
+		lit = false                       # throttle closed / fuel valve off: flame-out
+		starting = false
+	if not lit:
+		if starter:
+			n1 += (STARTER_N1 - n1) / 3.0 * dt if n1 < STARTER_N1 else -n1 / 8.0 * dt
+			if fuel_available and ignition and n1 >= LIGHT_OFF_MIN_N1:
+				lit = true                    # igniter (energised with the starter) lights the fuel
+				starting = n1 < n1_idle - 1.0
+		else:
+			n1 -= maxf(n1 / 7.0, 0.6) * dt     # spool-down
+		n1 = maxf(n1, 0.0)
+		return
+	if starting:
+		var rate: float
+		if starter:
+			rate = clampf(2.3 - (n1 - 15.0) * 0.015, 1.3, 2.3)
+		elif n1 >= 50.0:
+			rate = 1.1                        # self-sustaining above about 50% N1
+		else:
+			rate = -0.8                       # starter released too early: hung start, N1 decays
+		rate += thr * 4.0                     # throttle opened past idle during the start = more fuel
+		n1 = maxf(n1 + rate * dt, 0.0)
+		if n1 >= n1_idle - 1.0:
+			starting = false
+		elif n1 < LIGHT_OFF_MIN_N1 and not starter:
+			lit = false                       # the start has failed
+			starting = false
+	elif starter and n1 < 70.0:
+		n1 += 0.3 * dt                        # starter still engaged at idle (starter limits!)
 
 # ------------------------------------------------------------- integration
 func step(dt: float) -> void:
@@ -461,18 +521,30 @@ func step(dt: float) -> void:
 	# ---------------- engine, governor and freewheel
 	var dens_ratio := (atmo.pressure_pa(pos.y) / 101325.0) / sqrt(atmo.temperature_k(pos.y) / 288.15)
 	var thr := clampf(throttle, 0.0, 1.0)
+	_step_start(dt, thr)
 	var n1_cmd := n1_idle
-	if thr >= 0.98:
-		var err := (omega100 - n2) / omega100
+	var gov_w := omega100 * gov_set_pct / 100.0
+	if not lit or starting:
+		gov_int = 0.0
+	elif thr >= 0.98:
+		var err := (gov_w - n2) / omega100
 		gov_int = clampf(gov_int + err * gov_ki * dt, -40.0, 60.0)
 		var p_ff := lerpf(30000.0, 230000.0, pow(clampf(collective, 0.0, 1.0), 1.3))
 		n1_cmd = n1_for_power(p_ff, dens_ratio) + gov_kp * err + gov_int
 	else:
 		gov_int = move_toward(gov_int, 0.0, 5.0 * dt)
 		n1_cmd = lerpf(n1_idle, n1_max, thr / 0.98)
-	n1_cmd = clampf(n1_cmd, n1_idle, minf(n1_max, lerpf(n1_idle, n1_max + 1.0, thr)))
-	var dn1 := clampf((n1_cmd - n1) / 0.6, -2.0 * n1_accel, n1_accel)
-	n1 = clampf(n1 + dn1 * dt, 0.0, 110.0)
+		if lit and not starting:
+			# M2.30: the N2 governor also limits a part-open throttle (it only ever reduces fuel), so
+			# opening the twist grip on the ground brings the rotor up to the governor setting
+			# instead of overshooting it
+			var err_p := (gov_w - n2) / omega100
+			var p_ff_p := lerpf(30000.0, 230000.0, pow(clampf(collective, 0.0, 1.0), 1.3))
+			n1_cmd = minf(n1_cmd, n1_for_power(p_ff_p, dens_ratio) + gov_kp * err_p + gov_int)
+	if lit and not starting:
+		n1_cmd = clampf(n1_cmd, n1_idle, minf(n1_max, lerpf(n1_idle, n1_max + 1.0, thr)))
+		var dn1 := clampf((n1_cmd - n1) / 0.6, -2.0 * n1_accel, n1_accel)
+		n1 = clampf(n1 + dn1 * dt, 0.0, 110.0)
 
 	var q_pt := pt_torque(n1, n2, dens_ratio)
 	if engaged:
@@ -487,7 +559,10 @@ func step(dt: float) -> void:
 			n2 = nr
 	if not engaged:
 		q_clutch = 0.0
-		nr += (-q_load / I_rotor) * dt
+		# M2.30: bearing / seal friction that only matters at low rotor rpm (shutdown coast-down),
+		# so the rotor really stops instead of slowing forever. Zero above 60% NR (no effect in flight).
+		var q_fric := 90.0 * clampf(1.0 - nr / (0.6 * omega100), 0.0, 1.0) * clampf(nr / 0.3, 0.0, 1.0)
+		nr += (-(q_load + q_fric) / I_rotor) * dt
 		n2 += (q_pt / I_pt) * dt
 		n2 = maxf(n2, 0.0)
 		if n2 >= nr:
@@ -608,6 +683,17 @@ func nr_pct() -> float:
 
 func n2_pct() -> float:
 	return n2 / omega100 * 100.0
+
+## Slip ball (inclinometer), in g: + = ball to the RIGHT. It shows the lateral specific force
+## (what you feel on the seat): "step on the ball" - ball left = left pedal.
+## SIMPLIFICATION: this flight model's fuselage side force is small, so in forward flight a pure
+## specific-force ball would hardly move with sideslip. A sideslip term (fading in from ~0 to 30 kt)
+## is added so that about 5 deg of sideslip moves the ball one ball width (0.06 g), like a real cockpit.
+func ball_g() -> float:
+	var sf := world_to_aero((force_world + Vector3(0.0, mass * G, 0.0)) / mass)
+	var beta := rad_to_deg(atan2(air_body.y, maxf(absf(air_body.x), 0.1)))
+	var fade := clampf(air_body.x / (30.0 * KT), 0.0, 1.0)
+	return clampf(-sf.y / G + 0.012 * beta * fade, -0.5, 0.5)
 
 func vs_fpm() -> float:
 	return vel.y / FT * 60.0

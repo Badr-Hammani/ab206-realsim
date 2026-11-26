@@ -17,6 +17,18 @@ var pedal_l: Node3D
 var pedal_r: Node3D
 var panel_quad: MeshInstance3D
 var panel_back: MeshInstance3D
+var overhead_box: MeshInstance3D
+var overhead_quad: MeshInstance3D
+
+## Puts the breaker console face (a SubViewport texture, overhead_face.gd) under the overhead box.
+func set_overhead_texture(tex: Texture2D) -> void:
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.30, 0.57)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = tex
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	overhead_quad = _mesh(interior, qm, Vector3(0.0, 0.888, -1.22), m, Vector3(90, 0, 0))
 var interior: Node3D
 var exterior_glass: MeshInstance3D
 var lower_body: MeshInstance3D
@@ -144,15 +156,27 @@ func _build_interior(fdm, panel_texture: Texture2D) -> void:
 		_box(interior, Vector3(0.5, 0.12, 0.5), Vector3(sx, -0.2, -0.75), seat)
 		_box(interior, Vector3(0.5, 0.7, 0.1), Vector3(sx, 0.18, -0.48), seat)
 	# instrument panel and glareshield (pilot sits right seat, panel centred)
-	panel_back = _box(interior, Vector3(1.15, 0.5, 0.06), Vector3(0.0, 0.0, -2.0), black, Vector3(-18, 0, 0))
-	_box(interior, Vector3(1.2, 0.04, 0.14), Vector3(0.0, 0.25, -2.02), black)
+	# M2.30b: panel with the real 206B-3 proportions (0.92 x 0.57 m face) and a proper glareshield
+	# hood: a top that overhangs the face, side cheeks that wrap down, rounded front corners
+	panel_back = _box(interior, Vector3(1.0, 0.62, 0.06), Vector3(0.0, 0.0, -2.0), black, Vector3(-18, 0, 0))
+	var hood := _mat(Color(0.035, 0.035, 0.04), 0.95)
+	var hood_root := Node3D.new()
+	hood_root.position = Vector3(0.0, 0.0, -1.965)
+	hood_root.rotation_degrees = Vector3(-18, 0, 0)
+	interior.add_child(hood_root)
+	_box(hood_root, Vector3(1.02, 0.025, 0.20), Vector3(0.0, 0.30, 0.085), hood, Vector3(-4, 0, 0))        # top
+	_box(hood_root, Vector3(0.90, 0.03, 0.03), Vector3(0.0, 0.287, 0.18), hood)                           # front lip
+	for sx in [-1.0, 1.0]:
+		_box(hood_root, Vector3(0.02, 0.16, 0.10), Vector3(sx * 0.49, 0.22, 0.06), hood)                  # short cheek under the hood
+		_box(hood_root, Vector3(0.04, 0.60, 0.05), Vector3(sx * 0.48, 0.0, 0.0), hood)                    # face frame
+	_box(hood_root, Vector3(0.98, 0.03, 0.05), Vector3(0.0, -0.30, 0.0), hood)                                   # bottom frame
 	var qm := QuadMesh.new()
-	qm.size = Vector2(1.05, 0.44)
+	qm.size = Vector2(0.92, 0.57)
 	var pmat := StandardMaterial3D.new()
 	pmat.albedo_texture = panel_texture
 	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	panel_quad = _mesh(interior, qm, Vector3(0.0, 0.0, -1.965), pmat, Vector3(-18, 0, 0))
-	_box(interior, Vector3(0.22, 0.4, 0.5), Vector3(0.0, -0.3, -1.65), black, Vector3(-30, 0, 0))
+	_box(interior, Vector3(0.22, 0.3, 0.5), Vector3(0.0, -0.47, -1.62), black, Vector3(-30, 0, 0))   # pedestal, below the panel face
 	# canopy frame. Real 206B-3: two curved windshield panes split by one slim centre
 	# post that runs from the top of the instrument console up and AFT to the roof,
 	# plus the forward door posts out at the sides where the windshield wraps round.
@@ -171,7 +195,9 @@ func _build_interior(fdm, panel_texture: Texture2D) -> void:
 		_box(interior, Vector3(0.035, 1.25, 0.04), Vector3(sx * 0.70, 0.35, -0.42), frame)   # aft door post
 		_box(interior, Vector3(0.03, 0.3, 1.1), Vector3(sx * 0.714, -0.32, -1.0), frame)   # lower door
 	_box(interior, Vector3(1.2, 0.04, 1.35), Vector3(0, 0.98, -1.025), grey)      # roof
-	_box(interior, Vector3(0.5, 0.08, 0.3), Vector3(0.0, 0.9, -1.3), black)       # overhead console
+	# overhead console (M2.30b): a long narrow box on the roof centre line, its face is the
+	# circuit-breaker texture (set_overhead_texture), readable when you look up
+	overhead_box = _box(interior, Vector3(0.34, 0.07, 0.60), Vector3(0.0, 0.925, -1.22), black)
 	# cyclic stick (right seat pilot, between knees)
 	cyclic_pivot = Node3D.new()
 	cyclic_pivot.position = Vector3(0.38, -0.45, -1.25)
